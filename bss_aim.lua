@@ -1,10 +1,10 @@
--- BSS-Aim v3.1 — panel con tabs, animaciones, keybind capture
+-- BSS-Aim v4 — ESP completo, items con monto, panel fluido
 -- discord.gg/syncrypt
 -- RMB apuntar · RShift toggle · F1 abre/cierra panel
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-if getgenv().BSS_AimV3 then return end
-getgenv().BSS_AimV3 = true
+if getgenv().BSS_AimV4 then return end
+getgenv().BSS_AimV4 = true
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -22,21 +22,19 @@ local function getParent()
     return LP:WaitForChild("PlayerGui")
 end
 
--- ============ PALETA ============
 local C = {
-    bg       = Color3.fromRGB(13, 14, 20),
-    bg2      = Color3.fromRGB(19, 21, 28),
-    bg3      = Color3.fromRGB(26, 29, 38),
-    bg4      = Color3.fromRGB(34, 38, 50),
-    accent   = Color3.fromRGB(0, 230, 160),
-    accent2  = Color3.fromRGB(150, 100, 255),
-    fg       = Color3.fromRGB(235, 238, 245),
-    muted    = Color3.fromRGB(125, 130, 145),
-    danger   = Color3.fromRGB(240, 80, 95),
-    border   = Color3.fromRGB(38, 42, 54),
+    bg      = Color3.fromRGB(11, 12, 18),
+    bg2     = Color3.fromRGB(18, 20, 27),
+    bg3     = Color3.fromRGB(26, 29, 38),
+    bg4     = Color3.fromRGB(36, 40, 52),
+    accent  = Color3.fromRGB(0, 230, 160),
+    accent2 = Color3.fromRGB(150, 100, 255),
+    fg      = Color3.fromRGB(235, 238, 245),
+    muted   = Color3.fromRGB(120, 126, 140),
+    danger  = Color3.fromRGB(240, 80, 95),
+    border  = Color3.fromRGB(36, 40, 52),
 }
 
--- ============ CONFIG ============
 local CFG = getgenv().BSS_AimConfig or {
     Enabled = true,
     HoldKey = Enum.UserInputType.MouseButton2,
@@ -58,10 +56,11 @@ local CFG = getgenv().BSS_AimConfig or {
     HealthESP = true,
     MaxESP = 700,
     ESPColor = Color3.fromRGB(0, 230, 160),
+    ItemColor = Color3.fromRGB(120, 230, 130),
 }
 getgenv().BSS_AimConfig = CFG
 
--- ============ FOV CIRCLE ============
+-- ============ FOV ============
 local fovCircle
 if Drawing then
     local ok, c = pcall(function()
@@ -458,7 +457,7 @@ local function pad(p, t, b, l, r)
 end
 
 local sg = new("ScreenGui", {
-    Name = "BSS_Aim_V3",
+    Name = "BSS_Aim_V4",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     DisplayOrder = 100,
@@ -534,7 +533,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 200, 1, 0),
     Position = UDim2.new(0, 56, 0, 16),
     BackgroundTransparency = 1,
-    Text = "v3.1 · panel de control",
+    Text = "v4 · panel de control",
     TextColor3 = C.muted,
     TextSize = 11,
     Font = Enum.Font.Gotham,
@@ -1141,8 +1140,8 @@ actionBtn(cfgPage, "Reiniciar todo", C.danger, function()
         if r.text then pcall(function() r.text:Remove() end) end
     end
     sg:Destroy()
-    getgenv().BSS_AimV3 = false
-    warn("[BSS-Aim v3.1] reiniciado — recargá el script")
+    getgenv().BSS_AimV4 = false
+    warn("[BSS-Aim v4] reiniciado — recargá el script")
 end)
 
 selectTab("AIM")
@@ -1240,7 +1239,7 @@ closeBtn.MouseButton1Click:Connect(function()
         if r.text then pcall(function() r.text:Remove() end) end
     end
     sg:Destroy()
-    getgenv().BSS_AimV3 = false
+    getgenv().BSS_AimV4 = false
 end)
 
 UIS.InputBegan:Connect(function(i, gp)
@@ -1250,10 +1249,10 @@ end)
 
 pcall(function()
     LP.PlayerGui:SetCore("SendNotification", {
-        Title = "BSS-Aim v3.1",
+        Title = "BSS-Aim v4",
         Text = "F1 panel · RMB apuntar · RShift toggle",
         Duration = 5,
     })
 end)
 
-print("[BSS-Aim v3.1] cargado")
+print("[BSS-Aim v4] cargado — ESP items con monto activo")

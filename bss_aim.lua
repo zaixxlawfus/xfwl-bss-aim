@@ -464,7 +464,9 @@ local function updateItemESP()
             if rec.text then
                 if on then
                     local label = m.Name
-                    local guid = m:GetAttribute and m:GetAttribute("ItemGUID")
+                                        local guid = nil
+                    local okG, valG = pcall(function() return m:GetAttribute("ItemGUID") end)
+                    if okG then guid = valG end
                     if guid then label = label .. " · " .. tostring(guid):sub(1, 6) end
                     rec.text.Position = Vector2.new(sp.X, sp.Y)
                     rec.text.Text     = string.format("📦 %s [%dm]", label, math.floor(dist))

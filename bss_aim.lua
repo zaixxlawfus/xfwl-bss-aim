@@ -1,6 +1,6 @@
 -- ============================================================================
 -- BSS-Aim ULTRA v12.3
--- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP HP + WEAPON ESP
+-- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP HP + WEAPON ICON ESP
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -39,76 +39,68 @@ local IS_PC = not IS_MOBILE
 local ICON_SPLASH = "rbxassetid://96190503453096"
 
 -- ============================================================================
--- WEAPON DATABASE — BlockSpin (Sep 2026, full value list)
--- Tier: 5=Omega 4=Legendary 3=Epic 2=Rare 1=Uncommon 0=unknown
+-- WEAPON DATABASE — BlockSpin, con TextureId fallback
 -- ============================================================================
 local WEAPON_DB = {
-    -- Omega
-    ["M249"]              = { tier=5, label="M249",         color=Color3.fromRGB(255,50,50)   },
-    ["Anaconda"]          = { tier=5, label="Anaconda",     color=Color3.fromRGB(255,50,50)   },
-    -- Legendary
-    ["RPG"]               = { tier=4, label="RPG",          color=Color3.fromRGB(255,140,0)   },
-    ["M16"]               = { tier=4, label="M16",          color=Color3.fromRGB(255,140,0)   },
-    ["AK47"]              = { tier=4, label="AK47",         color=Color3.fromRGB(255,140,0)   },
-    ["AK-47"]             = { tier=4, label="AK47",         color=Color3.fromRGB(255,140,0)   },
-    ["Remington"]         = { tier=4, label="Remington",    color=Color3.fromRGB(255,140,0)   },
-    ["MP5"]               = { tier=4, label="MP5",          color=Color3.fromRGB(255,140,0)   },
-    ["Crossbow"]          = { tier=4, label="Crossbow",     color=Color3.fromRGB(255,140,0)   },
-    ["Tactical Axe"]      = { tier=4, label="Tac.Axe",      color=Color3.fromRGB(255,140,0)   },
-    ["Tactical Shovel"]   = { tier=4, label="Tac.Shovel",   color=Color3.fromRGB(255,140,0)   },
-    ["Tactical Knife"]    = { tier=4, label="Tac.Knife",    color=Color3.fromRGB(255,140,0)   },
-    ["Firework Launcher"] = { tier=4, label="Firework",     color=Color3.fromRGB(255,140,0)   },
-    -- Epic
-    ["M24"]               = { tier=3, label="M24",          color=Color3.fromRGB(160,80,255)  },
-    ["Draco"]             = { tier=3, label="Draco",        color=Color3.fromRGB(160,80,255)  },
-    ["Skorpion"]          = { tier=3, label="Skorpion",     color=Color3.fromRGB(160,80,255)  },
-    ["Double Barrel"]     = { tier=3, label="Dbl.Barrel",   color=Color3.fromRGB(160,80,255)  },
-    ["Barbed Baseball Bat"]={ tier=3, label="Barbed Bat",   color=Color3.fromRGB(160,80,255)  },
-    ["Sledge Hammer"]     = { tier=3, label="Sledge",       color=Color3.fromRGB(160,80,255)  },
-    ["Combat Axe"]        = { tier=3, label="Cmbt.Axe",     color=Color3.fromRGB(160,80,255)  },
-    ["Machete"]           = { tier=3, label="Machete",      color=Color3.fromRGB(160,80,255)  },
-    ["Shovel"]            = { tier=3, label="Shovel",       color=Color3.fromRGB(160,80,255)  },
-    -- Rare
-    ["Brainrot Slapper"]  = { tier=2, label="Brainrot",     color=Color3.fromRGB(80,220,120)  },
-    ["Hunting Rifle"]     = { tier=2, label="Hunt.Rifle",   color=Color3.fromRGB(80,220,120)  },
-    ["Uzi"]               = { tier=2, label="Uzi",          color=Color3.fromRGB(80,220,120)  },
-    ["Sawnoff"]           = { tier=2, label="Sawnoff",      color=Color3.fromRGB(80,220,120)  },
-    ["P226"]              = { tier=2, label="P226",         color=Color3.fromRGB(80,220,120)  },
-    ["Glock"]             = { tier=2, label="Glock",        color=Color3.fromRGB(80,220,120)  },
-    ["Metal Baseball Bat"]= { tier=2, label="Metal Bat",    color=Color3.fromRGB(80,220,120)  },
-    ["Wrench"]            = { tier=2, label="Wrench",       color=Color3.fromRGB(80,220,120)  },
-    ["Crowbar"]           = { tier=2, label="Crowbar",      color=Color3.fromRGB(80,220,120)  },
-    ["Axe"]               = { tier=2, label="Axe",          color=Color3.fromRGB(80,220,120)  },
-    ["Frying Pan"]        = { tier=2, label="Pan",          color=Color3.fromRGB(80,220,120)  },
-    ["Butcher Knife"]     = { tier=2, label="Butcher",      color=Color3.fromRGB(80,220,120)  },
-    ["Switchblade"]       = { tier=2, label="Switchblade",  color=Color3.fromRGB(80,220,120)  },
-    -- Uncommon
-    ["Baseball Bat"]      = { tier=1, label="Baseball Bat", color=Color3.fromRGB(180,180,180) },
-    ["G3"]                = { tier=1, label="G3",           color=Color3.fromRGB(180,180,180) },
-    ["C9"]                = { tier=1, label="C9",           color=Color3.fromRGB(180,180,180) },
+    ["M249"]              = { tier=5, label="M249",         color=Color3.fromRGB(255,50,50),   icon="" },
+    ["Anaconda"]          = { tier=5, label="Anaconda",     color=Color3.fromRGB(255,50,50),   icon="" },
+    ["RPG"]               = { tier=4, label="RPG",          color=Color3.fromRGB(255,140,0),   icon="" },
+    ["M16"]               = { tier=4, label="M16",          color=Color3.fromRGB(255,140,0),   icon="" },
+    ["AK47"]              = { tier=4, label="AK47",         color=Color3.fromRGB(255,140,0),   icon="" },
+    ["AK-47"]             = { tier=4, label="AK47",         color=Color3.fromRGB(255,140,0),   icon="" },
+    ["Remington"]         = { tier=4, label="Remington",    color=Color3.fromRGB(255,140,0),   icon="" },
+    ["MP5"]               = { tier=4, label="MP5",          color=Color3.fromRGB(255,140,0),   icon="" },
+    ["Crossbow"]          = { tier=4, label="Crossbow",     color=Color3.fromRGB(255,140,0),   icon="" },
+    ["Tactical Axe"]      = { tier=4, label="Tac.Axe",      color=Color3.fromRGB(255,140,0),   icon="" },
+    ["Tactical Shovel"]   = { tier=4, label="Tac.Shovel",   color=Color3.fromRGB(255,140,0),   icon="" },
+    ["Tactical Knife"]    = { tier=4, label="Tac.Knife",    color=Color3.fromRGB(255,140,0),   icon="" },
+    ["Firework Launcher"] = { tier=4, label="Firework",     color=Color3.fromRGB(255,140,0),   icon="" },
+    ["M24"]               = { tier=3, label="M24",          color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Draco"]             = { tier=3, label="Draco",        color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Skorpion"]          = { tier=3, label="Skorpion",     color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Double Barrel"]     = { tier=3, label="Dbl.Barrel",   color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Barbed Baseball Bat"]={ tier=3, label="Barbed Bat",   color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Sledge Hammer"]     = { tier=3, label="Sledge",       color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Combat Axe"]        = { tier=3, label="Cmbt.Axe",     color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Machete"]           = { tier=3, label="Machete",      color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Shovel"]            = { tier=3, label="Shovel",       color=Color3.fromRGB(160,80,255),  icon="" },
+    ["Brainrot Slapper"]  = { tier=2, label="Brainrot",     color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Hunting Rifle"]     = { tier=2, label="Hunt.Rifle",   color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Uzi"]               = { tier=2, label="Uzi",          color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Sawnoff"]           = { tier=2, label="Sawnoff",      color=Color3.fromRGB(80,220,120),  icon="" },
+    ["P226"]              = { tier=2, label="P226",         color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Glock"]             = { tier=2, label="Glock",        color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Metal Baseball Bat"]= { tier=2, label="Metal Bat",    color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Wrench"]            = { tier=2, label="Wrench",       color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Crowbar"]           = { tier=2, label="Crowbar",      color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Axe"]               = { tier=2, label="Axe",          color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Frying Pan"]        = { tier=2, label="Pan",          color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Butcher Knife"]     = { tier=2, label="Butcher",      color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Switchblade"]       = { tier=2, label="Switchblade",  color=Color3.fromRGB(80,220,120),  icon="" },
+    ["Baseball Bat"]      = { tier=1, label="Baseball Bat", color=Color3.fromRGB(180,180,180), icon="" },
+    ["G3"]                = { tier=1, label="G3",           color=Color3.fromRGB(180,180,180), icon="" },
+    ["C9"]                = { tier=1, label="C9",           color=Color3.fromRGB(180,180,180), icon="" },
 }
 
--- resolve a Tool name → DB entry, fuzzy-tolerant
 local function resolveWeapon(toolName)
     if not toolName then return nil end
     local entry = WEAPON_DB[toolName]
     if entry then return entry end
-    -- case-insensitive fallback
     local low = toolName:lower()
     for k, v in pairs(WEAPON_DB) do
         if k:lower() == low then return v end
     end
-    -- partial match (handles "✪ Sawnoff" prefix star, etc.)
     for k, v in pairs(WEAPON_DB) do
         if low:find(k:lower(), 1, true) or k:lower():find(low, 1, true) then return v end
     end
     return nil
 end
 
--- get the highest-tier weapon a player is carrying (scans Backpack + Character)
+-- escanea Backpack + Character, devuelve {entry, textureId} del arma de mayor tier
 local function getEquippedWeapon(plr)
     local best = nil
     local bestTier = -1
+    local bestTexture = ""
     local function scanParent(parent)
         if not parent then return end
         for _, tool in ipairs(parent:GetChildren()) do
@@ -117,14 +109,16 @@ local function getEquippedWeapon(plr)
                 local tier = entry and entry.tier or 0
                 if tier > bestTier then
                     bestTier = tier
-                    best = entry or { tier=0, label=tool.Name:sub(1,12), color=Color3.fromRGB(200,200,200) }
+                    best = entry or { tier=0, label=tool.Name:sub(1,12), color=Color3.fromRGB(200,200,200), icon="" }
+                    -- agarra TextureId directamente del Tool — BlockSpin lo setea en el objeto
+                    bestTexture = (tool.TextureId and tool.TextureId ~= "") and tool.TextureId or (entry and entry.icon or "")
                 end
             end
         end
     end
     scanParent(plr:FindFirstChild("Backpack"))
     scanParent(plr.Character)
-    return best
+    return best, bestTexture
 end
 
 -- ============================================================================
@@ -223,7 +217,7 @@ local DEFAULTS = {
     ChamsESP = true,
     NameESP = true,
     HealthESP = true,
-    WeaponESP = true,       -- NEW
+    WeaponESP = true,
     ItemESP = true,
     NoRecoil = true,
     HitboxExpander = false,
@@ -312,12 +306,12 @@ local C = {
 }
 
 local TIER_COLORS = {
-    [5] = Color3.fromRGB(255, 50,  50),   -- Omega    = rojo
-    [4] = Color3.fromRGB(255, 140,  0),   -- Legendary = naranja
-    [3] = Color3.fromRGB(160, 80,  255),  -- Epic     = morado
-    [2] = Color3.fromRGB(80,  220, 120),  -- Rare     = verde
-    [1] = Color3.fromRGB(180, 180, 180),  -- Uncommon = gris
-    [0] = Color3.fromRGB(120, 120, 120),  -- Unknown
+    [5] = Color3.fromRGB(255, 50,  50),
+    [4] = Color3.fromRGB(255, 140,  0),
+    [3] = Color3.fromRGB(160, 80,  255),
+    [2] = Color3.fromRGB(80,  220, 120),
+    [1] = Color3.fromRGB(180, 180, 180),
+    [0] = Color3.fromRGB(120, 120, 120),
 }
 local TIER_LABELS = { [5]="[Ω]", [4]="[L]", [3]="[E]", [2]="[R]", [1]="[U]", [0]="[?]" }
 
@@ -539,7 +533,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM — Highlight + Name + HP + WEAPON
+-- ESP SYSTEM — Highlight + Name + HP + WEAPON ICON
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -563,10 +557,12 @@ local function updateESP()
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearESP(plr); continue end
 
-        -- weapon scan (done once per ESP refresh, not per frame)
-        local weapEntry = CFG.WeaponESP and getEquippedWeapon(plr) or nil
+        local weapEntry, weapTexture = nil, ""
+        if CFG.WeaponESP then
+            weapEntry, weapTexture = getEquippedWeapon(plr)
+        end
 
-        -- 1. Highlight — color por arma si WeaponESP ON, si no color hp
+        -- 1. Highlight
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
@@ -575,21 +571,14 @@ local function updateESP()
                 hl.Adornee = char; hl.Parent = char
                 pESP[plr] = hl
             end
-            if CFG.WeaponESP and weapEntry then
-                -- outline = tier color, fill = hp
-                pESP[plr].OutlineColor = weapEntry.color
-                local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                pESP[plr].FillColor = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
-            else
-                local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                pESP[plr].FillColor = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
-                pESP[plr].OutlineColor = Color3.fromRGB(0,0,0)
-            end
+            local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+            pESP[plr].FillColor = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
+            pESP[plr].OutlineColor = (CFG.WeaponESP and weapEntry) and weapEntry.color or Color3.fromRGB(0,0,0)
         else
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
-        -- 2. BillboardGui — Name + HP + Weapon
+        -- 2. BillboardGui — Name + HP + Weapon Icon
         if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
             if not tESP[plr] or not tESP[plr].Parent then
                 local bb = Instance.new("BillboardGui")
@@ -610,13 +599,29 @@ local function updateESP()
                 hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0
                 hpLbl.Parent = bb
 
-                -- NEW: weapon label
-                local weapLbl = Instance.new("TextLabel")
-                weapLbl.Name = "Weapon"; weapLbl.BackgroundTransparency = 1
-                weapLbl.Size = UDim2.new(1, 0, 0, 14); weapLbl.Position = UDim2.new(0, 0, 0, 30)
-                weapLbl.Font = Enum.Font.GothamBold; weapLbl.TextSize = 12
-                weapLbl.TextColor3 = Color3.fromRGB(255,200,50); weapLbl.TextStrokeTransparency = 0
-                weapLbl.Parent = bb
+                -- weapon row: icono a la izquierda + nombre a la derecha
+                local weapFrame = Instance.new("Frame")
+                weapFrame.Name = "WeapFrame"; weapFrame.BackgroundTransparency = 1
+                weapFrame.Size = UDim2.new(1, 0, 0, 28); weapFrame.Position = UDim2.new(0, 0, 0, 30)
+                weapFrame.Parent = bb
+
+                local weapImg = Instance.new("ImageLabel")
+                weapImg.Name = "WeapImg"; weapImg.BackgroundTransparency = 1
+                weapImg.Size = UDim2.fromOffset(24, 24)
+                weapImg.Position = UDim2.new(0, 0, 0, 2)
+                weapImg.ScaleType = Enum.ScaleType.Fit
+                weapImg.Image = ""; weapImg.ImageColor3 = Color3.new(1,1,1)
+                weapImg.Parent = weapFrame
+
+                local weapNameLbl = Instance.new("TextLabel")
+                weapNameLbl.Name = "WeapName"; weapNameLbl.BackgroundTransparency = 1
+                weapNameLbl.Size = UDim2.new(1, -28, 0, 24); weapNameLbl.Position = UDim2.new(0, 28, 0, 2)
+                weapNameLbl.Font = Enum.Font.GothamBold; weapNameLbl.TextSize = 11
+                weapNameLbl.TextColor3 = Color3.fromRGB(255,200,50)
+                weapNameLbl.TextStrokeTransparency = 0
+                weapNameLbl.TextXAlignment = Enum.TextXAlignment.Left
+                weapNameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+                weapNameLbl.Text = ""; weapNameLbl.Parent = weapFrame
 
                 tESP[plr] = bb
             end
@@ -624,7 +629,7 @@ local function updateESP()
             local bbg = tESP[plr]
             local scale = math.clamp(dist / CFG.MaxESP, 0, 1)
             local sm = 1 + (scale * 1.5)
-            bbg.Size = UDim2.fromOffset(160 * sm, 54 * sm)
+            bbg.Size = UDim2.fromOffset(160 * sm, 62 * sm)
             bbg.StudsOffsetWorldSpace = Vector3.new(0, 3 * sm, 0)
 
             local nameLbl = bbg:FindFirstChild("Name")
@@ -638,16 +643,25 @@ local function updateESP()
                 hpLbl.TextColor3 = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
             end
 
-            -- NEW: weapon label update
-            local weapLbl = bbg:FindFirstChild("Weapon")
-            if weapLbl then
+            local weapFrame = bbg:FindFirstChild("WeapFrame")
+            if weapFrame then
+                local weapImg = weapFrame:FindFirstChild("WeapImg")
+                local weapNameLbl = weapFrame:FindFirstChild("WeapName")
                 if CFG.WeaponESP and weapEntry then
-                    weapLbl.Visible = true
+                    weapFrame.Visible = true
                     local tierTag = TIER_LABELS[weapEntry.tier] or "[?]"
-                    weapLbl.Text = tierTag .. " " .. weapEntry.label
-                    weapLbl.TextColor3 = TIER_COLORS[weapEntry.tier] or Color3.fromRGB(200,200,200)
+                    if weapImg then
+                        weapImg.Image = weapTexture
+                        weapImg.ImageColor3 = weapEntry.color
+                        weapImg.Visible = weapTexture ~= ""
+                    end
+                    if weapNameLbl then
+                        weapNameLbl.Text = tierTag .. " " .. weapEntry.label
+                        weapNameLbl.TextColor3 = TIER_COLORS[weapEntry.tier] or Color3.fromRGB(200,200,200)
+                        weapNameLbl.Visible = true
+                    end
                 else
-                    weapLbl.Visible = false
+                    weapFrame.Visible = false
                 end
             end
         else
@@ -908,7 +922,7 @@ toggle(espPage, "Activar ESP", "PlayerESP")
 toggle(espPage, "Cuerpo iluminado", "ChamsESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
-toggle(espPage, "Arma equipada", "WeaponESP")    -- NEW toggle
+toggle(espPage, "Arma equipada", "WeaponESP")
 slider(espPage, "Rango ESP", "MaxESP", 50, 1500, false)
 
 local hitboxPage = pages["HITBOX"]
@@ -1127,5 +1141,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     else statsHUD.Visible = false end
 end)
 
-notify("BSS-Aim ULTRA v12.3", "Car Fix, Mini Arriba, No Recoil, HP ESP + Weapon ESP", 6)
+notify("BSS-Aim ULTRA v12.3", "Car Fix, Mini Arriba, No Recoil, Weapon Icon ESP", 6)
 print("[BSS-Aim ULTRA v12.3] cargado")

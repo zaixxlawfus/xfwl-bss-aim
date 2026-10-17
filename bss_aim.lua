@@ -1,10 +1,9 @@
--- BSS-Aim v17 — tema blanco neon + icon splash
+-- BSS-Aim v18 — aim sin temblor + panel negro arreglado
 -- discord.gg/syncrypt
--- Auto-detect mobile/PC · Compatible: Delta, Xeno, Codex, PC
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-if getgenv().BSS_AimV17 then return end
-getgenv().BSS_AimV17 = true
+if getgenv().BSS_AimV18 then return end
+getgenv().BSS_AimV18 = true
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -101,7 +100,7 @@ local DEFAULTS = {
     PanicKey = "Delete",
     FOV = 90,
     FOVRadius = 90,
-    LockSnap = 1.0,
+    LockSnap = 0.72,
     MaxDistance = 500,
     TargetPart = "Head",
     TeamCheck = false,
@@ -192,6 +191,8 @@ CFG.ToggleKey = resolveKey(CFG.ToggleKey, Enum.KeyCode.RightShift)
 CFG.PanelKey = resolveKey(CFG.PanelKey, Enum.KeyCode.F1)
 CFG.PanicKey = resolveKey(CFG.PanicKey, Enum.KeyCode.Delete)
 CFG.FOVRadius = CFG.FOV
+CFG.PanelOpacity = 1
+CFG.LockSnap = 0.72
 getgenv().BSS_AimConfig = CFG
 
 local saveScheduled = false
@@ -248,6 +249,8 @@ end
 local aimOn = false
 local currentTarget = nil
 local lastSwitch = 0
+local smoothedTargetPos = nil
+local lastTargetCheck = 0
 local aimBtn, miniBtn = nil, nil
 local sessionStart = tick()
 local sessionKills = 0
@@ -1052,7 +1055,7 @@ wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim v17"
+wmLabel.Text = "BSS-Aim v18"
 wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
@@ -1149,7 +1152,7 @@ end
 
 -- ============ MAIN PANEL ============
 local sg = new("ScreenGui", {
-    Name = "BSS_Aim_V17", ResetOnSpawn = false, IgnoreGuiInset = true,
+    Name = "BSS_Aim_V18", ResetOnSpawn = false, IgnoreGuiInset = true,
     DisplayOrder = 100, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = getParent(),
 })
@@ -1164,7 +1167,7 @@ local TAB_H = 30
 local panel = new("Frame", {
     Size = UDim2.fromOffset(W, H),
     Position = UDim2.new(0.5, -W/2, 0.5, -H/2),
-    BackgroundColor3 = C.bg, BackgroundTransparency = 1 - CFG.PanelOpacity,
+    BackgroundColor3 = C.bg, BackgroundTransparency = 0,
     BorderSizePixel = 0, Parent = sg,
 })
 corner(panel, 16)
@@ -1189,7 +1192,6 @@ local header = new("Frame", {
     BackgroundColor3 = Color3.fromRGB(10, 10, 12), BorderSizePixel = 0, Parent = panel,
 })
 
--- LOGO con imagen
 local logo = new("Frame", {
     Size = UDim2.fromOffset(30, 30), Position = UDim2.new(0, 12, 0.5, -15),
     BackgroundColor3 = Color3.fromRGB(255, 255, 255),
@@ -1218,7 +1220,7 @@ new("TextLabel", {
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "v17 · tryhard" or "v17 · mobile") .. "  ·  white neon",
+    Text = (IS_PC and "v18 · tryhard" or "v18 · mobile") .. "  ·  white neon",
     TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
@@ -1652,7 +1654,7 @@ toggle(aimPage, "Activar", "Enabled")
 toggle(aimPage, "Camera lock", "CameraLock")
 toggle(aimPage, "Solo al disparar", "AimOnFireOnly")
 slider(aimPage, "FOV", "FOV", 30, 400, false, function(v) CFG.FOVRadius = v end)
-slider(aimPage, "Lock snap", "LockSnap", 0.5, 1, true)
+slider(aimPage, "Lock snap", "LockSnap", 0.3, 0.85, true)
 slider(aimPage, "Dist. max", "MaxDistance", 100, 1500, false)
 partSelector(aimPage)
 prioritySelector(aimPage)
@@ -1721,7 +1723,7 @@ toggle(hudPage, "Ping", "HUDPing")
 toggle(hudPage, "Playerlist", "HUDPlayerList")
 section(hudPage, "PANEL")
 slider(hudPage, "Opacidad panel", "PanelOpacity", 0.5, 1, true, function(v)
-    panel.BackgroundTransparency = 1 - v
+    panel.BackgroundTransparency = math.clamp(1 - v, 0, 0.5)
 end)
 toggle(hudPage, "Notificaciones", "Notifications")
 
@@ -1765,6 +1767,8 @@ actionBtn(safePage, "Resetear config", C.danger, function()
     for k, v in pairs(d) do CFG[k] = v end
     CFG.ESPColor = Color3.new(unpack(DEFAULTS.ESPColor))
     CFG.FOVRadius = CFG.FOV
+    CFG.LockSnap = 0.72
+    CFG.PanelOpacity = 1
     CFG.HoldKey = resolveKey("MouseButton2", Enum.UserInputType.MouseButton2)
     CFG.ToggleKey = resolveKey("RightShift", Enum.KeyCode.RightShift)
     CFG.PanelKey = resolveKey("F1", Enum.KeyCode.F1)
@@ -1787,7 +1791,7 @@ actionBtn(safePage, "Reiniciar script", C.danger, function()
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV17 = false
+    getgenv().BSS_AimV18 = false
 end)
 
 selectTab("AIM")
@@ -1937,7 +1941,7 @@ closeBtn.MouseButton1Click:Connect(function()
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV17 = false
+    getgenv().BSS_AimV18 = false
 end)
 
 UIS.InputBegan:Connect(function(i, gp)
@@ -2002,9 +2006,6 @@ local function refreshPlayerList()
 end
 
 -- ============ MAIN LOOP ============
-local SWITCH_HYSTERESIS = 40
-local SWITCH_COOLDOWN = 0.25
-
 RunService.RenderStepped:Connect(function(dt)
     fpsCount += 1
     if tick() - fpsTimer >= 1 then
@@ -2013,29 +2014,48 @@ RunService.RenderStepped:Connect(function(dt)
         fpsTimer = tick()
     end
 
-    if aimOn or CFG.TriggerBot or CFG.AutoFire then
+    -- TARGET SELECTION con throttle (10 chequeos por seg, no cada frame)
+    local now = tick()
+    if (aimOn or CFG.TriggerBot or CFG.AutoFire) and (now - lastTargetCheck) > 0.1 then
+        lastTargetCheck = now
         if not (CFG.AimOnFireOnly and not aimOn) then
             local _, bestPart, bestScore = getTargetWithScore()
             if targetDead() then
-                if bestPart then currentTarget = bestPart; lastSwitch = tick()
-                else currentTarget = nil end
-            elseif bestPart and bestPart ~= currentTarget then
-                local curPx = targetPx()
-                if bestScore + SWITCH_HYSTERESIS < curPx
-                    and (tick() - lastSwitch) > SWITCH_COOLDOWN then
+                if bestPart then
                     currentTarget = bestPart
-                    lastSwitch = tick()
+                    smoothedTargetPos = nil
+                    lastSwitch = now
+                else
+                    currentTarget = nil
+                    smoothedTargetPos = nil
+                end
+            elseif bestPart and bestPart ~= currentTarget then
+                -- hysteresis grande: solo cambia si el nuevo esta MUCHO mas cerca
+                local curPx = targetPx()
+                if bestScore + 100 < curPx and (now - lastSwitch) > 0.8 then
+                    currentTarget = bestPart
+                    smoothedTargetPos = nil
+                    lastSwitch = now
+                end
+            end
+            if currentTarget and targetPx() > CFG.FOVRadius * 1.4 then
+                if bestPart then
+                    currentTarget = bestPart
+                    smoothedTargetPos = nil
+                    lastSwitch = now
+                else
+                    currentTarget = nil
+                    smoothedTargetPos = nil
                 end
             end
         end
-    else
-        if not (CFG.TriggerBot or CFG.AutoFire) then
-            currentTarget = nil
-        end
+    elseif not (aimOn or CFG.TriggerBot or CFG.AutoFire) then
+        currentTarget = nil
+        smoothedTargetPos = nil
     end
 
     if IS_MOBILE and aimBtn then
-        if currentTarget then aimBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 30)
+        if currentTarget then aimBtn.BackgroundColor3 = Color3.fromRGB(20, 60, 90)
         elseif aimOn then aimBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 25)
         else aimBtn.BackgroundColor3 = Color3.fromRGB(15, 17, 24) end
     end
@@ -2071,22 +2091,42 @@ RunService.RenderStepped:Connect(function(dt)
         elseif drawSnapline then drawSnapline.Visible = false end
     end
 
+    -- CAMERA LOCK con smoothed target (mata el temblor)
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        local camPos = Camera.CFrame.Position
-        local tPos
+        if not smoothedTargetPos then
+            smoothedTargetPos = currentTarget.Position
+        else
+            smoothedTargetPos = smoothedTargetPos:Lerp(currentTarget.Position, 0.35)
+        end
+
+        local tPos = smoothedTargetPos
         if IS_PC and CFG.Prediction > 0 then
             local plr = Players:GetPlayerFromCharacter(currentTarget.Parent)
-            if plr then tPos = predictPos(plr, currentTarget, dt) else tPos = currentTarget.Position end
-        else tPos = currentTarget.Position end
+            if plr then
+                local char = plr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local vel = hrp.AssemblyLinearVelocity
+                    if vel.Magnitude > 2 then
+                        tPos = smoothedTargetPos + vel * CFG.Prediction
+                    end
+                end
+            end
+        end
+
+        local camPos = Camera.CFrame.Position
         local desired = CFrame.lookAt(camPos, tPos)
-        Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(CFG.LockSnap, 0, 1))
+        local alpha = math.clamp(CFG.LockSnap, 0, 1)
+        Camera.CFrame = Camera.CFrame:Lerp(desired, alpha)
+    else
+        smoothedTargetPos = nil
     end
 
     pcall(tryFire)
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV17 do
+    while getgenv().BSS_AimV18 do
         pcall(updatePlayerESP)
         pcall(updateItemESP)
         pcall(tryPickup)
@@ -2096,17 +2136,17 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV17 do
+    while getgenv().BSS_AimV18 do
         pcall(refreshPlayerList)
         task.wait(0.5)
     end
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV17 do
+    while getgenv().BSS_AimV18 do
         watermark.Visible = CFG.HUDWatermark
         if CFG.HUDWatermark then
-            wmLabel.Text = string.format("BSS-Aim v17 · %s", IS_PC and "PC" or "Mobile")
+            wmLabel.Text = string.format("BSS-Aim v18 · %s", IS_PC and "PC" or "Mobile")
         end
         statsHUD.Visible = CFG.HUDStats or CFG.HUDFPS or CFG.HUDPing
         if statsHUD.Visible then
@@ -2127,7 +2167,7 @@ task.spawn(function()
     end
 end)
 
-notify("BSS-Aim v17", (IS_PC and "PC tryhard" or "Mobile") ..
-    " · white neon · auto-save " .. (HAVE_FILE_IO and "ON" or "OFF"), 6)
+notify("BSS-Aim v18", (IS_PC and "PC tryhard" or "Mobile") ..
+    " · aim fix + panel fix", 6)
 
-print("[BSS-Aim v17] cargado — white neon theme + splash icon")
+print("[BSS-Aim v18] cargado — aim sin temblor + panel negro")

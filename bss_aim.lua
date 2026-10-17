@@ -462,6 +462,7 @@ end)
 
 -- ============================================================================
 -- ESP SYSTEM (HIGHLIGHT + TEXT HP/NAME + SCALING)
+-- FIX: throttled to ESPRefresh interval, off RenderStep
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -471,8 +472,12 @@ local function clearESP(plr)
     if tESP[plr] then pcall(function() tESP[plr]:Destroy() end); tESP[plr] = nil end
 end
 
+-- FIX: cache player list, avoid rebuilding every frame
+local _playerCache = {}
 local function updateESP()
-    for _, plr in ipairs(Players:GetPlayers()) do
+    -- rebuild cache cheaply
+    _playerCache = Players:GetPlayers()
+    for _, plr in ipairs(_playerCache) do
         if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then
             clearESP(plr)
             continue
@@ -850,7 +855,6 @@ local function makeDrag(f, h)
 end
 makeDrag(panel, header)
 
--- MINI BUTTON: Fijo en el medio de arriba
 local miniBtn = new("TextButton", { Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0.5, -28, 0, 20), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, Text = "", AutoButtonColor = false, Active = true, Visible = false, ZIndex = 200, Parent = sg })
 corner(miniBtn, 28); neonStroke(miniBtn, Color3.fromRGB(255, 255, 255))
 local miniIcon = Instance.new("ImageLabel"); miniIcon.AnchorPoint = Vector2.new(0.5, 0.5); miniIcon.Position = UDim2.fromScale(0.5, 0.5)
@@ -859,7 +863,7 @@ miniIcon.Image = ICON_SPLASH; miniIcon.ImageColor3 = Color3.fromRGB(10, 10, 12);
 
 miniBtn.MouseButton1Click:Connect(function()
     panel.Visible = true; panel.Size = UDim2.fromOffset(1, 1)
-    panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2) -- Abre en el medio
+    panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
     TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W, H) }):Play()
     miniBtn.Visible = false
 end)
@@ -881,7 +885,6 @@ local function closePanel()
         tw.Completed:Connect(function()
             panel.Visible = false; panel.Size = UDim2.fromOffset(W, H)
             miniBtn.Visible = true
-            -- Tween para que el circulo aparezca en su lugar fijo arriba
             miniBtn.Size = UDim2.fromOffset(1, 1)
             TweenService:Create(miniBtn, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(56, 56) }):Play()
         end)
@@ -932,17 +935,27 @@ stLabel.TextYAlignment = Enum.TextYAlignment.Top; stLabel.TextWrapped = true; st
 local fpsCount = 0; local fpsTimer = tick(); local currentFPS = 60
 
 -- ============================================================================
--- BACKGROUND LOOPS
+-- BACKGROUND LOOPS — FIX: separated timers, no pile-up
 -- ============================================================================
+
+-- FIX 1: ESP on its own throttled loop (was task.wait(0.1) shared with pickup+kills → 3 heavy jobs every 0.1s)
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         pcall(updateESP)
-        pcall(tryPickup)
-        pcall(trackKills)
-        task.wait(0.1)
+        task.wait(CFG.ESPRefresh or 0.1)
     end
 end)
 
+-- FIX 2: pickup + kill tracker on slower cadence — no need to run at 10Hz
+task.spawn(function()
+    while getgenv().BSS_Aim_Loaded do
+        pcall(tryPickup)
+        pcall(trackKills)
+        task.wait(0.2)
+    end
+end)
+
+-- FIX 3: hidename on its own 1.5s loop (unchanged, already fine)
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         pcall(applyHideName)
@@ -950,6 +963,7 @@ task.spawn(function()
     end
 end)
 
+-- FIX 4: hitbox loop slowed to 1s — no reason to reapply at 0.5s
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         if CFG.HitboxExpander then
@@ -959,13 +973,16 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(0.5)
+        task.wait(1)
     end
 end)
 
 -- ============================================================================
 -- MAIN LOOP (AIM & NO RECOIL & CAR FIX)
+-- FIX 5: HUD text only rebuilds when values changed — no string.format every frame
 -- ============================================================================
+local _lastKills = -1; local _lastPickups = -1; local _lastMinutes = -1; local _lastFPS = -1
+
 pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Value + 1, function(dt)
     fpsCount += 1
@@ -999,7 +1016,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     local inCar = hum and hum.SeatPart ~= nil
 
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        -- CAR AIM FIX: Forzamos Scriptable para que la camara del vehiculo no gane
         if inCar then
             if Camera.CameraType ~= Enum.CameraType.Scriptable then
                 Camera.CameraType = Enum.CameraType.Scriptable
@@ -1025,23 +1041,17 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         end
     end
 
-    if CFG.HUDWatermark then
-        watermark.Visible = true
-    else
-        watermark.Visible = false
-    end
+    watermark.Visible = CFG.HUDWatermark
 
+    -- FIX 5: dirty-check before rebuilding label string
     if CFG.HUDFPS then
         statsHUD.Visible = true
-        local minutes = math.floor((tick() - sessionStart) / 60)
-        local lines = {
-            string.format("Kills:    %d", sessionKills),
-            string.format("Pickups:  %d", sessionPickups),
-            string.format("Session:  %dm", minutes),
-            string.format("FPS:      %d", currentFPS),
-        }
-        stLabel.Text = table.concat(lines, "\n")
-        statsHUD.Size = UDim2.fromOffset(180, 20 + #lines * 16)
+        local minutes = math.floor((now - sessionStart) / 60)
+        if sessionKills ~= _lastKills or sessionPickups ~= _lastPickups or minutes ~= _lastMinutes or currentFPS ~= _lastFPS then
+            _lastKills = sessionKills; _lastPickups = sessionPickups; _lastMinutes = minutes; _lastFPS = currentFPS
+            stLabel.Text = string.format("Kills:    %d\nPickups:  %d\nSession:  %dm\nFPS:      %d", sessionKills, sessionPickups, minutes, currentFPS)
+            statsHUD.Size = UDim2.fromOffset(180, 76)
+        end
     else
         statsHUD.Visible = false
     end

@@ -1,4 +1,4 @@
--- BSS-Aim v6 — ESP Reconstruido
+-- BSS-Aim v7 — 2D ESP (ScreenGui) + Hide Name Total + Aim perfecto
 -- discord.gg/syncrypt
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -39,7 +39,7 @@ local ICON_SPLASH = "rbxassetid://96190503453096"
 local CONFIG_FOLDER = "BSS_Aim"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 6
+local CONFIG_VERSION = 7
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -111,7 +111,7 @@ local DEFAULTS = {
     ConfigVersion = CONFIG_VERSION,
     Enabled = true,
     HoldKey = "MouseButton2", ToggleKey = "RightShift", PanelKey = "F1", PanicKey = "Delete",
-    FOV = 130, FOVRadius = 130, Smoothness = 0.72, CarSmoothness = 0.92,
+    FOV = 130, FOVRadius = 130, Smoothness = 0.85, CarSmoothness = 0.95,
     CarAim = true, NoRecoil = true, MaxDistance = 400, TargetPart = "Head",
     TeamCheck = false, WallCheck = true, DrawFOV = true, FOVLockToTarget = true, CameraLock = true, SnapCloseRange = true,
     SilentAim = true, AimOnFireOnly = false, AutoFire = false, AutoFireDelay = 0.15, TriggerBot = false, TriggerDelay = 0.05,
@@ -119,7 +119,7 @@ local DEFAULTS = {
     PlayerESP = true, WeaponIconESP = true, ItemESP = true, NameESP = true, HealthESP = true,
     ChamsESP = false, HeadDotESP = false, SnaplineESP = false, ArmedOnlyESP = false,
     NameColorByHP = true, DistanceStuds = false, Prediction = 0.15,
-    MaxESP = 400, ESPMinScale = 0.45, ESPMaxScale = 1.0, ESPRefresh = 0.15,
+    MaxESP = 400, ESPMinScale = 0.45, ESPMaxScale = 1.0, ESPRefresh = 0.05,
     ESPColor = {1, 1, 1}, ItemOutline = true,
     AutoPickup = true, PickupRadius = 50, PickupDelay = 0.1,
     PickupMoney = true, PickupWeapons = true, PickupFood = true, PickupTools = true,
@@ -153,36 +153,23 @@ end
 
 local CFG = defaultCfg()
 local saved = loadConfigFrom(CONFIG_FILE)
-local needMigration = false
-
-if saved then
-    if saved.ConfigVersion and saved.ConfigVersion >= CONFIG_VERSION then
-        for k, v in pairs(saved) do
-            if CFG[k] ~= nil or k == "ESPColor" then CFG[k] = v end
-        end
-    else
-        -- Migración forzosa a config recomendada pa' que arregle el ESP
-        needMigration = true
-        CFG.HoldKey = saved.HoldKey or CFG.HoldKey
-        CFG.ToggleKey = saved.ToggleKey or CFG.ToggleKey
-        CFG.PanelKey = saved.PanelKey or CFG.PanelKey
-        CFG.PanicKey = saved.PanicKey or CFG.PanicKey
-        CFG.HideName = saved.HideName or CFG.HideName
-        CFG.HideLeaderboard = saved.HideLeaderboard or CFG.HideLeaderboard
+if saved and saved.ConfigVersion == CONFIG_VERSION then
+    for k, v in pairs(saved) do
+        if CFG[k] ~= nil or k == "ESPColor" then CFG[k] = v end
     end
+else
+    -- Forzar recomendados si es version vieja
+    CFG.HoldKey = resolveKey("MouseButton2", Enum.UserInputType.MouseButton2)
+    CFG.ToggleKey = resolveKey("RightShift", Enum.KeyCode.RightShift)
+    CFG.PanelKey = resolveKey("F1", Enum.KeyCode.F1)
+    CFG.PanicKey = resolveKey("Delete", Enum.KeyCode.Delete)
+    saveConfigTo(CONFIG_FILE, CFG)
 end
 
 if type(CFG.ESPColor) == "table" then CFG.ESPColor = Color3.new(unpack(CFG.ESPColor)) end
-CFG.HoldKey = resolveKey(CFG.HoldKey, Enum.UserInputType.MouseButton2)
-CFG.ToggleKey = resolveKey(CFG.ToggleKey, Enum.KeyCode.RightShift)
-CFG.PanelKey = resolveKey(CFG.PanelKey, Enum.KeyCode.F1)
-CFG.PanicKey = resolveKey(CFG.PanicKey, Enum.KeyCode.Delete)
 CFG.FOVRadius = CFG.FOV
 CFG.PanelOpacity = 1
-CFG.ConfigVersion = CONFIG_VERSION
 getgenv().BSS_AimConfig = CFG
-
-if needMigration or not saved then saveConfigTo(CONFIG_FILE, CFG) end
 
 -- ============ AUTO-SAVE ============
 local dirtyFlag = false
@@ -233,16 +220,29 @@ local lastHealthSnapshot = {}
 local originalCameraType = Camera.CameraType
 local isFiring = false
 local savedShotRotation = nil
-local originalDisplayName = nil
 
--- ============ HIDE NAME ============
+-- ============ HIDE NAME TOTAL ============
+local originalDisplayName = nil
 local function applyHideName()
     pcall(function()
         if originalDisplayName == nil then originalDisplayName = LP.DisplayName end
         if CFG.HideName then LP.DisplayName = CFG.HideNameText or "..." else LP.DisplayName = originalDisplayName end
     end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideLeaderboard) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName) end)
+    pcall(function()
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideLeaderboard)
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName)
+    end)
+    -- Ocultar leaderboards/chat personalizados del juego
+    pcall(function()
+        local pg = LP:FindFirstChild("PlayerGui")
+        if pg then
+            for _, gui in ipairs(pg:GetChildren()) do
+                if gui.Name == "Chat" or gui.Name == "Leaderboard" or gui.Name == "PlayerList" then
+                    gui.Enabled = not CFG.HideName
+                end
+            end
+        end
+    end)
 end
 
 -- ============ FOV ============
@@ -412,25 +412,6 @@ if IS_PC and CFG.SilentAim then
     end
 end
 
--- ============ TRIGGER ============
-local lastFire = 0
-local function tryFire()
-    if not CFG.Enabled or not currentTarget then return end
-    if not (CFG.TriggerBot or CFG.AutoFire) then return end
-    local now = tick(); local delay = CFG.TriggerBot and CFG.TriggerDelay or CFG.AutoFireDelay
-    if now - lastFire < delay then return end
-    if targetPx() > 8 then return end
-    lastFire = now
-    pcall(function()
-        local VIM = game:GetService("VirtualInputManager")
-        if VIM then
-            VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, true, game, 1)
-            task.wait(0.02)
-            VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, false, game, 1)
-        end
-    end)
-end
-
 -- ============ HELPERS ============
 local function getStamina(plr, char, hum)
     if hum then local s = hum:GetAttribute("Stamina") or hum:GetAttribute("stamina"); if s ~= nil then return s, (hum:GetAttribute("MaxStamina") or 100) end end
@@ -469,167 +450,145 @@ local function ensureChams(plr, char)
 end
 local function clearChams(plr) local h = chamsTable[plr]; if h then pcall(function() h:Destroy() end); chamsTable[plr] = nil end end
 
--- ============ ESP ============
+-- ============ 2D ESP (ScreenGui) ============
 local pESP = {}
 local iESP = {}
+local espGui = Instance.new("ScreenGui")
+espGui.Name = "BSS_ESP_2D"; espGui.ResetOnSpawn = false; espGui.IgnoreGuiInset = true; espGui.DisplayOrder = 85; espGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; espGui.Parent = getParent()
 
+local function createPlayerESP()
+    local container = Instance.new("Frame")
+    container.Name = "Container"; container.BackgroundTransparency = 1; container.BorderSizePixel = 0; container.Visible = false; container.Parent = espGui
+    
+    -- Box
+    local box = Instance.new("Frame")
+    box.Name = "Box"; box.BackgroundTransparency = 1; box.BorderSizePixel = 0; box.Size = UDim2.fromScale(1, 1); box.Parent = container
+    local boxStroke = Instance.new("UIStroke")
+    boxStroke.Color = CFG.ESPColor; boxStroke.Thickness = 1; boxStroke.Parent = box
+    
+    -- Name
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1; nameLbl.Position = UDim2.new(0, 0, 0, -18); nameLbl.Size = UDim2.new(1, -24, 0, 16)
+    nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 13; nameLbl.TextColor3 = Color3.fromRGB(255,255,255)
+    nameLbl.TextStrokeTransparency = 0; nameLbl.TextStrokeColor3 = Color3.fromRGB(0,0,0); nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+    nameLbl.Parent = container
+    
+    -- Weap Icon
+    local wepIcon = Instance.new("ImageLabel")
+    wepIcon.Name = "WepIcon"; wepIcon.BackgroundTransparency = 1; wepIcon.Position = UDim2.new(1, -24, 0, -22); wepIcon.Size = UDim2.fromOffset(24, 24)
+    wepIcon.ScaleType = Enum.ScaleType.Fit; wepIcon.Visible = false; wepIcon.Parent = container
+    
+    -- Dist
+    local distLbl = Instance.new("TextLabel")
+    distLbl.Name = "Dist"; distLbl.BackgroundTransparency = 1; distLbl.Position = UDim2.new(0, 0, 1, 2); distLbl.Size = UDim2.new(1, 0, 0, 14)
+    distLbl.Font = Enum.Font.GothamBold; distLbl.TextSize = 11; distLbl.TextColor3 = CFG.ESPColor
+    distLbl.TextStrokeTransparency = 0; distLbl.TextStrokeColor3 = Color3.fromRGB(0,0,0); distLbl.TextXAlignment = Enum.TextXAlignment.Center
+    distLbl.Parent = container
+    
+    -- Health Bar
+    local hpBg = Instance.new("Frame")
+    hpBg.Name = "HpBg"; hpBg.BackgroundColor3 = Color3.fromRGB(0,0,0); hpBg.BorderSizePixel = 1; hpBg.BorderColor3 = Color3.fromRGB(0,0,0)
+    hpBg.Position = UDim2.new(0, -5, 0, 0); hpBg.Size = UDim2.new(0, 3, 1, 0); hpBg.Parent = container
+    local hpFill = Instance.new("Frame")
+    hpFill.Name = "HpFill"; hpFill.BackgroundColor3 = Color3.fromRGB(80, 220, 120); hpFill.BorderSizePixel = 0
+    hpFill.AnchorPoint = Vector2.new(0, 1); hpFill.Position = UDim2.new(0, 0, 1, 0); hpFill.Size = UDim2.new(1, 0, 1, 0); hpFill.Parent = hpBg
+    
+    return container
+end
+
+local function createItemESP()
+    local container = Instance.new("Frame")
+    container.Name = "ItemContainer"; container.BackgroundTransparency = 1; container.BorderSizePixel = 0; container.Visible = false; container.Parent = espGui
+    local lbl = Instance.new("TextLabel")
+    lbl.Name = "Label"; lbl.BackgroundColor3 = Color3.fromRGB(0,0,0); lbl.BackgroundTransparency = 0.5; lbl.BorderSizePixel = 0
+    lbl.Size = UDim2.fromOffset(100, 20); lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextColor3 = CFG.ESPColor; lbl.Parent = container
+    Instance.new("UICorner", lbl).CornerRadius = UDim.new(0, 4)
+    local st = Instance.new("UIStroke"); st.Color = Color3.fromRGB(0,0,0); st.Thickness = 2; st.Parent = lbl
+    return container
+end
+
+-- Clean up ESP
 local function clearESP(plr)
-    local b = pESP[plr]; if b then pcall(function() b:Destroy() end); pESP[plr] = nil end
+    local t = pESP[plr]
+    if t then t:Destroy(); pESP[plr] = nil end
     clearChams(plr)
 end
-local function clearItemESP(m) local b = iESP[m]; if b then pcall(function() b:Destroy() end); iESP[m] = nil end end
 
--- ESP Reconstruido de Raíz
-local function ensureP(plr)
-    if pESP[plr] and pESP[plr].Parent then return pESP[plr] end
-    local char = plr.Character
-    if not char then return nil end
-    local head = char:FindFirstChild("Head")
-    if not head then return nil end
-
-    -- BillboardGui principal
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "BSS_ESP"
-    billboard.Size = UDim2.fromOffset(160, 90) -- Tamaño amplio para que nada se corte
-    billboard.StudsOffsetWorldSpace = Vector3.new(0, 2.6, 0)
-    billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 0
-    billboard.ResetOnSpawn = false
-    billboard.ClipsDescendants = false
-    billboard.MaxDistance = CFG.MaxESP
-    billboard.Adornee = head
-    billboard.Parent = head
-
-    -- Contenedor central
-    local container = Instance.new("Frame")
-    container.Name = "Container"
-    container.BackgroundTransparency = 1
-    container.Size = UDim2.fromOffset(140, 70)
-    container.Position = UDim2.fromScale(0.5, 0.5)
-    container.AnchorPoint = Vector2.new(0.5, 0.5)
-    container.Parent = billboard
-
-    -- 1. Caja
-    local box = Instance.new("Frame")
-    box.Name = "Box"
-    box.BackgroundTransparency = 1
-    box.Size = UDim2.fromScale(1, 1)
-    box.ZIndex = 1
-    box.Parent = container
-    local boxStroke = Instance.new("UIStroke")
-    boxStroke.Color = CFG.ESPColor
-    boxStroke.Thickness = 1.5
-    boxStroke.Parent = box
-
-    -- 2. Nombre
-    local nameLbl = Instance.new("TextLabel")
-    nameLbl.Name = "Name"
-    nameLbl.BackgroundTransparency = 1
-    nameLbl.Position = UDim2.new(0, 0, 0, -20)
-    nameLbl.Size = UDim2.new(1, -30, 0, 18)
-    nameLbl.Font = Enum.Font.GothamBold
-    nameLbl.TextSize = 14
-    nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nameLbl.TextStrokeTransparency = 0
-    nameLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-    nameLbl.ZIndex = 10
-    nameLbl.Parent = container
-
-    -- 3. Icono del Arma
-    local wepIcon = Instance.new("ImageLabel")
-    wepIcon.Name = "WepIcon"
-    wepIcon.BackgroundTransparency = 1
-    wepIcon.Position = UDim2.new(1, -26, 0, -26)
-    wepIcon.Size = UDim2.fromOffset(26, 26)
-    wepIcon.ScaleType = Enum.ScaleType.Fit
-    wepIcon.Visible = false
-    wepIcon.ZIndex = 10
-    wepIcon.Parent = container
-
-    -- 4. Distancia
-    local distLbl = Instance.new("TextLabel")
-    distLbl.Name = "Dist"
-    distLbl.BackgroundTransparency = 1
-    distLbl.Position = UDim2.new(0, 0, 1, 4)
-    distLbl.Size = UDim2.new(1, 0, 0, 16)
-    distLbl.Font = Enum.Font.GothamBold
-    distLbl.TextSize = 12
-    distLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    distLbl.TextStrokeTransparency = 0
-    distLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    distLbl.TextXAlignment = Enum.TextXAlignment.Center
-    distLbl.ZIndex = 10
-    distLbl.Parent = container
-
-    -- 5. Health Bar
-    local hpBg = Instance.new("Frame")
-    hpBg.Name = "HpBg"
-    hpBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    hpBg.BorderSizePixel = 1
-    hpBg.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    hpBg.Position = UDim2.new(0, -6, 0, 0)
-    hpBg.Size = UDim2.new(0, 4, 1, 0)
-    hpBg.ZIndex = 10
-    hpBg.Parent = container
-
-    local hpFill = Instance.new("Frame")
-    hpFill.Name = "HpFill"
-    hpFill.BackgroundColor3 = Color3.fromRGB(80, 220, 120)
-    hpFill.BorderSizePixel = 0
-    hpFill.AnchorPoint = Vector2.new(0, 1)
-    hpFill.Position = UDim2.new(0, 0, 1, 0)
-    hpFill.Size = UDim2.new(1, 0, 1, 0)
-    hpFill.Parent = hpBg
-
-    pESP[plr] = billboard
-    return billboard
+local function clearItemESP(m)
+    local t = iESP[m]
+    if t then t:Destroy(); iESP[m] = nil end
 end
 
-local function hideP(plr)
-    local b = pESP[plr]; if b and b.Parent then b.Enabled = false end
-    local h = chamsTable[plr]; if h and h.Parent then h.Enabled = false end
-end
-
-local function updateScale(b, dist)
-    local maxD = CFG.MaxESP; local minS = CFG.ESPMinScale; local maxS = CFG.ESPMaxScale
-    local t = math.clamp(dist / maxD, 0, 1); local s = maxS + (minS - maxS) * t
-    b.Size = UDim2.fromOffset(160 * s, 90 * s)
-end
-
-local function updatePlayerESP()
+-- Dibujar ESP 2D
+local function drawESP()
+    -- Jugadores
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LP or sameTeam(plr) or not alive(plr) then hideP(plr); continue end
-        local char = plr.Character; local head = char and char:FindFirstChild("Head"); local hrp = char and char:FindFirstChild("HumanoidRootPart"); local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not (head and hrp and hum) then hideP(plr); continue end
-        local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
-        if dist > CFG.MaxESP then hideP(plr); continue end
-        if CFG.ArmedOnlyESP and not hasWeapon(plr) then hideP(plr); continue end
-
-        local b = ensureP(plr); if not b then continue end
-        b.Enabled = true; b.MaxDistance = CFG.MaxESP; updateScale(b, dist)
-
-        if CFG.ChamsESP then
-            local ch = ensureChams(plr, char); if ch then ch.Enabled = true; ch.FillColor = CFG.ESPColor end
-        else clearChams(plr) end
-
-        local container = b:FindFirstChild("Container")
-        if not container then continue end
-
-        local box = container:FindFirstChild("Box")
-        if box then
-            local stroke = box:FindFirstChildOfClass("UIStroke")
-            if stroke then
-                local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                if CFG.NameColorByHP then
-                    if hp > 0.6 then stroke.Color = CFG.ESPColor
-                    elseif hp > 0.3 then stroke.Color = Color3.fromRGB(240, 200, 80)
-                    else stroke.Color = C.danger end
-                else stroke.Color = CFG.ESPColor end
-            end
+        if plr == LP or sameTeam(plr) or not alive(plr) then
+            if pESP[plr] then pESP[plr].Visible = false end
+            continue
         end
-
-        local nameLbl = container:FindFirstChild("Name")
+        
+        local char = plr.Character
+        local head = char and char:FindFirstChild("Head")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        
+        if not (head and hrp and hum) then
+            if pESP[plr] then pESP[plr].Visible = false end
+            continue
+        end
+        
+        local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+        if dist > CFG.MaxESP then
+            if pESP[plr] then pESP[plr].Visible = false end
+            continue
+        end
+        
+        if CFG.ArmedOnlyESP and not hasWeapon(plr) then
+            if pESP[plr] then pESP[plr].Visible = false end
+            continue
+        end
+        
+        -- Calcular 2D Box
+        local topPos = head.Position + Vector3.new(0, 0.5, 0)
+        local bottomPos = hrp.Position - Vector3.new(0, 3, 0)
+        
+        local topScreen, on1 = Camera:WorldToViewportPoint(topPos)
+        local bottomScreen, on2 = Camera:WorldToViewportPoint(bottomPos)
+        
+        if not on1 or not on2 then
+            if pESP[plr] then pESP[plr].Visible = false end
+            continue
+        end
+        
+        local height = bottomScreen.Y - topScreen.Y
+        local width = height * 0.55
+        local x = topScreen.X - (width / 2)
+        local y = topScreen.Y
+        
+        if not pESP[plr] then
+            pESP[plr] = createPlayerESP()
+        end
+        local t = pESP[plr]
+        t.Visible = true
+        
+        -- Escala
+        local maxD = CFG.MaxESP
+        local minS = CFG.ESPMinScale
+        local maxS = CFG.ESPMaxScale
+        local s = maxS + (minS - maxS) * math.clamp(dist / maxD, 0, 1)
+        
+        t.Position = UDim2.fromOffset(x, y)
+        t.Size = UDim2.fromOffset(width, height)
+        
+        -- Chams
+        if CFG.ChamsESP then
+            local ch = ensureChams(plr, char)
+            if ch then ch.Enabled = true; ch.FillColor = CFG.ESPColor end
+        else clearChams(plr) end
+        
+        -- Nombre
+        local nameLbl = t:FindFirstChild("Name")
         if nameLbl then
             nameLbl.Visible = CFG.PlayerESP and CFG.NameESP
             if nameLbl.Visible then
@@ -641,11 +600,12 @@ local function updatePlayerESP()
                     if hpR > 0.6 then nameLbl.TextColor3 = C.hp
                     elseif hpR > 0.3 then nameLbl.TextColor3 = Color3.fromRGB(240, 200, 80)
                     else nameLbl.TextColor3 = C.danger end
-                else nameLbl.TextColor3 = C.fg end
+                else nameLbl.TextColor3 = Color3.fromRGB(255,255,255) end
             end
         end
-
-        local wepIcon = container:FindFirstChild("WepIcon")
+        
+        -- Arma
+        local wepIcon = t:FindFirstChild("WepIcon")
         if wepIcon then
             if CFG.PlayerESP and CFG.WeaponIconESP then
                 local tool = getEquippedTool(plr); local tex = getToolIcon(tool)
@@ -655,16 +615,16 @@ local function updatePlayerESP()
                 else wepIcon.Visible = false end
             else wepIcon.Visible = false end
         end
-
-        local distLbl = container:FindFirstChild("Dist")
+        
+        -- Distancia
+        local distLbl = t:FindFirstChild("Dist")
         if distLbl then
-            local dt = ""
-            if CFG.DistanceStuds then dt = string.format("%d studs", math.floor(dist * 3.28))
-            else dt = string.format("%dm", math.floor(dist)) end
+            local dt = CFG.DistanceStuds and string.format("%d studs", math.floor(dist * 3.28)) or string.format("%dm", math.floor(dist))
             if distLbl.Text ~= dt then distLbl.Text = dt end
         end
-
-        local hpBg = container:FindFirstChild("HpBg")
+        
+        -- Vida
+        local hpBg = t:FindFirstChild("HpBg")
         local hpFill = hpBg and hpBg:FindFirstChild("HpFill")
         if hpBg and hpFill then
             if CFG.PlayerESP and CFG.HealthESP then
@@ -676,11 +636,89 @@ local function updatePlayerESP()
                 hpBg.Visible = true
             else hpBg.Visible = false end
         end
+        
+        -- Contorno
+        local box = t:FindFirstChild("Box")
+        if box then
+            local stroke = box:FindFirstChildOfClass("UIStroke")
+            if stroke then
+                local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                if CFG.NameColorByHP then
+                    if hp > 0.6 then stroke.Color = CFG.ESPColor
+                    elseif hp > 0.3 then stroke.Color = Color3.fromRGB(240, 200, 80)
+                    else stroke.Color = C.danger end
+                else stroke.Color = CFG.ESPColor end
+            end
+        end
     end
-    for plr in pairs(pESP) do if not plr.Parent then clearESP(plr) end end
+    
+    -- Items
+    if CFG.ItemESP then
+        local folder = WS:FindFirstChild("DroppedItems")
+        if folder then
+            for _, m in ipairs(folder:GetChildren()) do
+                if not (m:IsA("Model") or m:IsA("BasePart")) then continue end
+                local part
+                if m:IsA("BasePart") then part = m
+                else
+                    part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart
+                    if not part then part = m:FindFirstChildWhichIsA("BasePart", true) end
+                end
+                if not part then continue end
+                
+                local dist = (Camera.CFrame.Position - part.Position).Magnitude
+                if dist > CFG.MaxESP then
+                    if iESP[m] then iESP[m].Visible = false end
+                    continue
+                end
+                
+                local sp, on = Camera:WorldToViewportPoint(part.Position)
+                if not on then
+                    if iESP[m] then iESP[m].Visible = false end
+                    continue
+                end
+                
+                local amount = readItemAmount(m)
+                local color, icon = classifyItem(m.Name)
+                local label = m.Name
+                if amount and amount ~= "" then label = m.Name .. " " .. amount end
+                
+                if not iESP[m] then
+                    iESP[m] = createItemESP()
+                end
+                local t = iESP[m]
+                t.Visible = true
+                t.Position = UDim2.fromOffset(sp.X, sp.Y)
+                
+                local lbl = t:FindFirstChild("Label")
+                if lbl then
+                    local txt = string.format("%s %s [%dm]", icon, label, math.floor(dist))
+                    if lbl.Text ~= txt then
+                        lbl.Text = txt; lbl.TextColor3 = color
+                        local st = lbl:FindFirstChildOfClass("UIStroke")
+                        if st then
+                            if CFG.ItemOutline then st.Color = Color3.fromRGB(0, 0, 0); st.Thickness = 2
+                            else st.Color = color; st.Thickness = 1 end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Limpieza
+    for plr, t in pairs(pESP) do if not plr.Parent then t:Destroy(); pESP[plr] = nil end end
+    for m, t in pairs(iESP) do if not m.Parent then t:Destroy(); iESP[m] = nil end end
 end
 
--- ============ ITEMS ============
+local function readItemAmount(model)
+    local bb = model:FindFirstChild("AmountBillboardGui", true)
+    if not bb then return nil end
+    local tl = bb:FindFirstChild("TextLabel")
+    if not tl then return nil end
+    return tl.Text
+end
+
 local function classifyItem(name)
     local n = name:lower()
     if n == "money" or n:find("cash") then return C.money, "$"
@@ -689,70 +727,6 @@ local function classifyItem(name)
     elseif n:find("tool") or n:find("wrench") or n:find("hammer") then return C.tool, "[T]"
     end
     return Color3.fromRGB(255, 200, 90), "[I]"
-end
-local function readItemAmount(model)
-    local bb = model:FindFirstChild("AmountBillboardGui", true); if not bb then return nil end
-    local tl = bb:FindFirstChild("TextLabel"); if not tl then return nil end
-    return tl.Text
-end
-
-local function ensureItemESP(m, part)
-    if iESP[m] and iESP[m].Parent then return iESP[m] end
-    local b = Instance.new("BillboardGui")
-    b.Name = "BSS_ItemESP"; b.Size = UDim2.fromOffset(110, 20); b.StudsOffsetWorldSpace = Vector3.new(0, 1.5, 0)
-    b.AlwaysOnTop = true; b.LightInfluence = 0; b.ResetOnSpawn = false; b.MaxDistance = CFG.MaxESP; b.Adornee = part; b.Parent = part
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Name = "Label"; lbl.BackgroundColor3 = Color3.fromRGB(0, 0, 0); lbl.BackgroundTransparency = 0.55; lbl.BorderSizePixel = 0
-    lbl.Size = UDim2.fromScale(1, 1); lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextColor3 = C.money; lbl.Text = ""; lbl.Parent = b
-    Instance.new("UICorner", lbl).CornerRadius = UDim.new(0, 4)
-    local st = Instance.new("UIStroke"); st.Color = Color3.fromRGB(0, 0, 0); st.Thickness = 2; st.Parent = lbl
-    iESP[m] = b
-    return b
-end
-
-local function updateItemESP()
-    if not CFG.ItemESP then for m in pairs(iESP) do clearItemESP(m) end; return end
-    local seen = {}
-    local folder = WS:FindFirstChild("DroppedItems")
-    if not folder then return end
-    for _, m in ipairs(folder:GetChildren()) do
-        if not (m:IsA("Model") or m:IsA("BasePart")) then continue end
-        local part
-        if m:IsA("BasePart") then part = m
-        else
-            part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart
-            if not part then part = m:FindFirstChildWhichIsA("BasePart", true) end
-        end
-        if not part then continue end
-        seen[m] = true
-        local dist = (Camera.CFrame.Position - part.Position).Magnitude
-        if dist > CFG.MaxESP then
-            local b = iESP[m]; if b and b.Parent then b.Enabled = false end
-            continue
-        end
-        local amount = readItemAmount(m); local color, icon = classifyItem(m.Name)
-        local label = m.Name
-        if amount and amount ~= "" then label = m.Name .. " " .. amount end
-        local b = ensureItemESP(m, part); if not b then continue end
-        b.Enabled = true; b.MaxDistance = CFG.MaxESP
-        local t = math.clamp(dist / CFG.MaxESP, 0, 1)
-        local s = CFG.ESPMaxScale + (CFG.ESPMinScale - CFG.ESPMaxScale) * t
-        b.Size = UDim2.fromOffset(110 * s, 20 * s)
-        local lbl = b:FindFirstChild("Label")
-        if lbl then
-            local txt = string.format("%s %s [%dm]", icon, label, math.floor(dist))
-            if lbl.Text ~= txt then
-                lbl.Text = txt; lbl.TextColor3 = color
-                local st = lbl:FindFirstChildOfClass("UIStroke")
-                if st then
-                    if CFG.ItemOutline then st.Color = Color3.fromRGB(0, 0, 0); st.Thickness = 2
-                    else st.Color = color; st.Thickness = 1 end
-                end
-            end
-        end
-    end
-    for m in pairs(iESP) do if not seen[m] or not m.Parent then clearItemESP(m) end end
 end
 
 -- ============ PICKUP ============
@@ -808,12 +782,6 @@ local function tryPickup()
                 end
             end)
             picked = true; sessionPickups += 1
-            if CFG.PickupNotify then
-                local color, icon = classifyItem(m.Name); local amount = readItemAmount(m)
-                local label = m.Name
-                if amount and amount ~= "" then label = m.Name .. " " .. amount end
-                notify("Pickup", icon .. " " .. label, 2)
-            end
         end
     end
     if picked then lastPickup = now end
@@ -861,7 +829,6 @@ local function getPing()
     if ok and type(ping) == "number" then return math.floor(ping) end
     return 0
 end
-
 local fpsCount = 0; local fpsTimer = tick(); local currentFPS = 60
 
 local playerListFrame = Instance.new("Frame")
@@ -908,7 +875,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = FONT_TITLE, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v6", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  2D ESP", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1108,11 +1075,6 @@ prioritySelector(aimPage)
 section(aimPage, "VEHICLE / RECOIL")
 toggle(aimPage, "Car Aim (disparar en auto)", "CarAim")
 toggle(aimPage, "No Recoil (arma no sube)", "NoRecoil")
-section(aimPage, "TRIGGER / AUTO-FIRE")
-toggle(aimPage, "Trigger bot", "TriggerBot")
-slider(aimPage, "Trigger delay", "TriggerDelay", 0.02, 0.5, true)
-toggle(aimPage, "Auto-fire al lockear", "AutoFire")
-slider(aimPage, "Auto-fire delay", "AutoFireDelay", 0.05, 1, true)
 section(aimPage, "FILTROS")
 toggle(aimPage, "FOV pegado a la cabeza", "FOVLockToTarget")
 toggle(aimPage, "Wall check", "WallCheck")
@@ -1145,8 +1107,6 @@ slider(espPage, "Rango ESP", "MaxESP", 50, 1000, false)
 section(espPage, "ITEMS")
 toggle(espPage, "Items dropeados", "ItemESP")
 toggle(espPage, "Borde negro en items", "ItemOutline")
-section(espPage, "RENDIMIENTO")
-slider(espPage, "Refresh", "ESPRefresh", 0.1, 0.5, true)
 
 local pickPage = pages["PICKUP"]
 section(pickPage, "AUTO PICKUP")
@@ -1195,25 +1155,6 @@ actionBtn(safePage, "Cargar config RECOMENDADA", C.accent, function()
     saveConfigTo(CONFIG_FILE, CFG)
     notify("Config", "Recomendada cargada - recarga script", 4)
 end)
-section(safePage, "PROFILES")
-actionBtn(safePage, "Guardar perfil 1", C.accent3, function() saveConfigTo(CONFIG_FOLDER .. "/profiles/p1.json", CFG); notify("Perfil", "Perfil 1 guardado", 3) end)
-actionBtn(safePage, "Cargar perfil 1", C.bg3, function()
-    local data = loadConfigFrom(CONFIG_FOLDER .. "/profiles/p1.json")
-    if data then
-        for k, v in pairs(data) do if CFG[k] ~= nil or k == "ESPColor" then CFG[k] = v end end
-        if type(CFG.ESPColor) == "table" then CFG.ESPColor = Color3.new(unpack(CFG.ESPColor)) end
-        saveConfigTo(CONFIG_FILE, CFG); notify("Perfil", "Perfil 1 cargado (recargá el script)", 4)
-    else notify("Perfil", "No existe el perfil 1", 3) end
-end)
-actionBtn(safePage, "Guardar perfil 2", C.accent3, function() saveConfigTo(CONFIG_FOLDER .. "/profiles/p2.json", CFG); notify("Perfil", "Perfil 2 guardado", 3) end)
-actionBtn(safePage, "Cargar perfil 2", C.bg3, function()
-    local data = loadConfigFrom(CONFIG_FOLDER .. "/profiles/p2.json")
-    if data then
-        for k, v in pairs(data) do if CFG[k] ~= nil or k == "ESPColor" then CFG[k] = v end end
-        if type(CFG.ESPColor) == "table" then CFG.ESPColor = Color3.new(unpack(CFG.ESPColor)) end
-        saveConfigTo(CONFIG_FILE, CFG); notify("Perfil", "Perfil 2 cargado (recargá el script)", 4)
-    else notify("Perfil", "No existe el perfil 2", 3) end
-end)
 section(safePage, "KEYBINDS")
 keybindRow(safePage, "Apuntar (hold)", "HoldKey")
 keybindRow(safePage, "Toggle aim", "ToggleKey")
@@ -1221,14 +1162,10 @@ keybindRow(safePage, "Panel", "PanelKey")
 keybindRow(safePage, "Panic (desactiva todo)", "PanicKey")
 section(safePage, "PANEL")
 actionBtn(safePage, "Centrar panel", C.bg3, function() panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2) end)
-actionBtn(safePage, "Limpiar ESP", C.bg3, function() for plr in pairs(pESP) do clearESP(plr) end; for m in pairs(iESP) do clearItemESP(m) end end)
 actionBtn(safePage, "Reiniciar script", C.danger, function()
     pcall(function() if originalDisplayName then LP.DisplayName = originalDisplayName end end)
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
-    espScreen:Destroy(); hudScreen:Destroy()
-    if saveToastRef then saveToastRef.gui:Destroy() end
-    if drawSnapline then pcall(function() drawSnapline:Remove() end) end
-    if drawHeadDot then pcall(function() drawHeadDot:Remove() end) end
+    espScreen:Destroy(); hudScreen:Destroy(); espGui:Destroy()
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
@@ -1310,7 +1247,7 @@ minBtn.MouseButton1Click:Connect(togglePanel)
 closeBtn.MouseButton1Click:Connect(function()
     pcall(function() if originalDisplayName then LP.DisplayName = originalDisplayName end end)
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
-    espScreen:Destroy(); hudScreen:Destroy()
+    espScreen:Destroy(); hudScreen:Destroy(); espGui:Destroy()
     if saveToastRef then saveToastRef.gui:Destroy() end
     if drawSnapline then pcall(function() drawSnapline:Remove() end) end
     if drawHeadDot then pcall(function() drawHeadDot:Remove() end) end
@@ -1365,11 +1302,10 @@ local function refreshPlayerList()
     for plr, r in pairs(playerRows) do if not current[plr] then r:Destroy(); playerRows[plr] = nil end end
 end
 
--- ============ BACKGROUND LOOPS ============
+-- ============ LOOPS ============
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
-        pcall(updatePlayerESP)
-        pcall(updateItemESP)
+        pcall(drawESP)
         pcall(tryPickup)
         pcall(trackKills)
         task.wait(CFG.ESPRefresh)
@@ -1510,5 +1446,5 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
 end)
 
 game:BindToClose(function() doSave() end)
-notify("BSS-Aim v6", (IS_PC and "PC tryhard" or "Mobile") .. " · ESP Fixed + Name", 6)
-print("[BSS-Aim v6] cargado")
+notify("BSS-Aim v7", (IS_PC and "PC" or "Mobile") .. " · 2D ESP activo", 6)
+print("[BSS-Aim v7] cargado")

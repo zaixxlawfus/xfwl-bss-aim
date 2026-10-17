@@ -1,4 +1,4 @@
--- BSS-Aim — Optimized (No Recoil + Aim tryhard + Cero Lag)
+-- BSS-Aim v4 — Camera priority fix + Weapon Icons + Recommended defaults
 -- discord.gg/syncrypt
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -16,6 +16,7 @@ pcall(function()
             end
         end
     end
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
 end)
 
 getgenv().BSS_Aim_Loaded = true
@@ -39,6 +40,7 @@ local ICON_SPLASH = "rbxassetid://96190503453096"
 local CONFIG_FOLDER = "BSS_Aim"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
+local CONFIG_VERSION = 4
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -105,26 +107,28 @@ local function loadConfigFrom(path)
     return deserializeCfg(data)
 end
 
--- ============ DEFAULTS ============
+-- ============ RECOMMENDED DEFAULTS ============
 local DEFAULTS = {
+    ConfigVersion = CONFIG_VERSION,
     Enabled = true,
     HoldKey = "MouseButton2",
     ToggleKey = "RightShift",
     PanelKey = "F1",
     PanicKey = "Delete",
-    FOV = 90,
-    FOVRadius = 90,
-    Smoothness = 0.65,
-    CarSmoothness = 0.85,
+    FOV = 130,
+    FOVRadius = 130,
+    Smoothness = 0.72,
+    CarSmoothness = 0.92,
     CarAim = true,
     NoRecoil = true,
-    MaxDistance = 500,
+    MaxDistance = 400,
     TargetPart = "Head",
     TeamCheck = false,
     WallCheck = true,
     DrawFOV = true,
     FOVLockToTarget = true,
     CameraLock = true,
+    SnapCloseRange = true,
     SilentAim = true,
     AimOnFireOnly = false,
     AutoFire = false,
@@ -136,6 +140,7 @@ local DEFAULTS = {
     IgnoreHPThreshold = 80,
     PlayerESP = true,
     WeaponESP = true,
+    WeaponIconESP = true,
     ItemESP = true,
     NameESP = true,
     HealthESP = true,
@@ -147,16 +152,16 @@ local DEFAULTS = {
     NameColorByHP = true,
     DistanceStuds = false,
     Tracers = true,
-    Prediction = 0.12,
-    MaxESP = 450,
-    ESPMinScale = 0.5,
+    Prediction = 0.15,
+    MaxESP = 400,
+    ESPMinScale = 0.45,
     ESPMaxScale = 1.0,
-    ESPRefresh = 0.15, -- Optimizado para no dar lag
+    ESPRefresh = 0.1,
     ESPColor = {1, 1, 1},
     ItemOutline = true,
     AutoPickup = true,
-    PickupRadius = 40,
-    PickupDelay = 0.1, -- Optimizado
+    PickupRadius = 50,
+    PickupDelay = 0.05,
     PickupMoney = true,
     PickupWeapons = true,
     PickupFood = true,
@@ -201,13 +206,29 @@ local function resolveKey(s, default)
     return default
 end
 
+-- ============ LOAD CONFIG (con version check) ============
 local CFG = defaultCfg()
 local saved = loadConfigFrom(CONFIG_FILE)
+local needMigration = false
+
 if saved then
-    for k, v in pairs(saved) do
-        if CFG[k] ~= nil or k == "ESPColor" then CFG[k] = v end
+    if saved.ConfigVersion and saved.ConfigVersion >= CONFIG_VERSION then
+        -- mismo version, cargar todo
+        for k, v in pairs(saved) do
+            if CFG[k] ~= nil or k == "ESPColor" then CFG[k] = v end
+        end
+    else
+        -- version vieja → migrar a recomendada, guardar keybinds
+        needMigration = true
+        CFG.HoldKey = saved.HoldKey or CFG.HoldKey
+        CFG.ToggleKey = saved.ToggleKey or CFG.ToggleKey
+        CFG.PanelKey = saved.PanelKey or CFG.PanelKey
+        CFG.PanicKey = saved.PanicKey or CFG.PanicKey
+        CFG.HideName = saved.HideName or CFG.HideName
+        CFG.HideLeaderboard = saved.HideLeaderboard or CFG.HideLeaderboard
     end
 end
+
 if type(CFG.ESPColor) == "table" then CFG.ESPColor = Color3.new(unpack(CFG.ESPColor)) end
 CFG.HoldKey = resolveKey(CFG.HoldKey, Enum.UserInputType.MouseButton2)
 CFG.ToggleKey = resolveKey(CFG.ToggleKey, Enum.KeyCode.RightShift)
@@ -215,7 +236,12 @@ CFG.PanelKey = resolveKey(CFG.PanelKey, Enum.KeyCode.F1)
 CFG.PanicKey = resolveKey(CFG.PanicKey, Enum.KeyCode.Delete)
 CFG.FOVRadius = CFG.FOV
 CFG.PanelOpacity = 1
+CFG.ConfigVersion = CONFIG_VERSION
 getgenv().BSS_AimConfig = CFG
+
+if needMigration or not saved then
+    saveConfigTo(CONFIG_FILE, CFG)
+end
 
 -- ============ AUTO-SAVE ============
 local dirtyFlag = false
@@ -351,7 +377,6 @@ local sessionKills = 0
 local sessionPickups = 0
 local lastHealthSnapshot = {}
 local originalCameraType = Camera.CameraType
-
 local isFiring = false
 local savedShotRotation = nil
 
@@ -447,7 +472,7 @@ if IS_MOBILE then
     pcall(function() aimBtn.Activated:Connect(toggleAim) end)
 end
 
--- ============ AIM CORE ============
+-- ============ AIM ============
 local rayP = RaycastParams.new()
 rayP.FilterType = Enum.RaycastFilterType.Exclude
 local function refreshFilter()
@@ -495,7 +520,6 @@ local function visible(target, char)
     return hit.Instance and hit.Instance:IsDescendantOf(char)
 end
 
--- OPTIMIZACIÓN: Recopila todos los candidatos, los ordena, y hace Raycast solo a los 3 primeros.
 local function getTargetWithScore()
     local candidates = {}
     local center = Camera.ViewportSize * 0.5
@@ -531,7 +555,6 @@ local function getTargetWithScore()
     
     table.sort(candidates, function(a, b) return a.score < b.score end)
     
-    -- Raycast solo a los 3 mejores para ahorrar lag
     for i = 1, math.min(3, #candidates) do
         local c = candidates[i]
         if not CFG.WallCheck or visible(c.part, c.plr.Character) then
@@ -560,7 +583,7 @@ local function targetPx()
     return (Vector2.new(sp.X, sp.Y) - center).Magnitude
 end
 
--- ============ INPUT & NO RECOIL ============
+-- ============ INPUT ============
 UIS.InputBegan:Connect(function(i, gp)
     if gp then return end
     if i.UserInputType == CFG.HoldKey or i.KeyCode == CFG.HoldKey then aimOn = true end
@@ -716,7 +739,7 @@ local function ensureP(plr)
 
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "BSS_ESP"
-    billboard.Size = UDim2.fromOffset(150, 76)
+    billboard.Size = UDim2.fromOffset(170, 80)
     billboard.StudsOffsetWorldSpace = Vector3.new(0, 2.6, 0)
     billboard.AlwaysOnTop = true
     billboard.LightInfluence = 0
@@ -736,22 +759,36 @@ local function ensureP(plr)
     local bgStroke = Instance.new("UIStroke")
     bgStroke.Color = CFG.ESPColor; bgStroke.Thickness = 1.5; bgStroke.Parent = bgFrame
 
+    -- NAME
     local nameLbl = Instance.new("TextLabel")
     nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
-    nameLbl.Position = UDim2.new(0, 6, 0, 3); nameLbl.Size = UDim2.new(1, -12, 0, 14)
+    nameLbl.Position = UDim2.new(0, 6, 0, 3); nameLbl.Size = UDim2.new(1, -30, 0, 14)
     nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 12
     nameLbl.TextColor3 = C.fg; nameLbl.TextXAlignment = Enum.TextXAlignment.Left
     nameLbl.TextStrokeTransparency = 0.4; nameLbl.Text = ""
     nameLbl.Parent = bgFrame
 
+    -- WEAPON ICON (top-right)
+    local wepIcon = Instance.new("ImageLabel")
+    wepIcon.Name = "WepIcon"
+    wepIcon.Size = UDim2.fromOffset(22, 22)
+    wepIcon.Position = UDim2.new(1, -26, 0, 1)
+    wepIcon.BackgroundTransparency = 1
+    wepIcon.Image = ""
+    wepIcon.ScaleType = Enum.ScaleType.Fit
+    wepIcon.Visible = false
+    wepIcon.Parent = bgFrame
+
+    -- WEAPON NAME
     local wepLbl = Instance.new("TextLabel")
     wepLbl.Name = "Wep"; wepLbl.BackgroundTransparency = 1
-    wepLbl.Position = UDim2.new(0, 6, 0, 17); wepLbl.Size = UDim2.new(1, -12, 0, 12)
+    wepLbl.Position = UDim2.new(0, 6, 0, 17); wepLbl.Size = UDim2.new(1, -30, 0, 12)
     wepLbl.Font = Enum.Font.Gotham; wepLbl.TextSize = 10
     wepLbl.TextColor3 = C.food; wepLbl.TextXAlignment = Enum.TextXAlignment.Left
     wepLbl.TextStrokeTransparency = 0.4; wepLbl.Text = ""
     wepLbl.Parent = bgFrame
 
+    -- HP BAR
     local hpBg = Instance.new("Frame")
     hpBg.Name = "HpBg"; hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
     hpBg.BorderSizePixel = 0; hpBg.Position = UDim2.new(0, 6, 0, 33)
@@ -770,6 +807,7 @@ local function ensureP(plr)
     hpTxt.TextXAlignment = Enum.TextXAlignment.Left; hpTxt.Text = "HP"; hpTxt.ZIndex = 2
     hpTxt.Parent = bgFrame
 
+    -- STAMINA BAR
     local stBg = Instance.new("Frame")
     stBg.Name = "StBg"; stBg.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
     stBg.BorderSizePixel = 0; stBg.Position = UDim2.new(0, 6, 0, 45)
@@ -788,6 +826,7 @@ local function ensureP(plr)
     stTxt.TextXAlignment = Enum.TextXAlignment.Left; stTxt.Text = "ST"; stTxt.ZIndex = 2
     stTxt.Parent = bgFrame
 
+    -- DIST
     local distLbl = Instance.new("TextLabel")
     distLbl.Name = "Dist"; distLbl.BackgroundTransparency = 1
     distLbl.Position = UDim2.new(0, 6, 1, -18); distLbl.Size = UDim2.new(1, -12, 0, 14)
@@ -805,6 +844,23 @@ local function hideP(plr)
     if b and b.Parent then b.Enabled = false end
     local h = chamsTable[plr]
     if h and h.Parent then h.Enabled = false end
+end
+
+-- ============ WEAPON HELPERS ============
+local function getEquippedTool(plr)
+    local c = plr.Character
+    if not c then return nil end
+    for _, x in ipairs(c:GetChildren()) do
+        if x:IsA("Tool") then return x end
+    end
+    return nil
+end
+
+local function getToolIcon(tool)
+    if not tool then return nil end
+    local ok, tex = pcall(function() return tool.TextureId end)
+    if ok and tex and type(tex) == "string" and tex ~= "" then return tex end
+    return nil
 end
 
 local function weapons(plr)
@@ -835,10 +891,9 @@ local function updateScale(b, dist)
     local maxS = CFG.ESPMaxScale
     local t = math.clamp(dist / maxD, 0, 1)
     local s = maxS + (minS - maxS) * t
-    b.Size = UDim2.fromOffset(150 * s, 76 * s)
+    b.Size = UDim2.fromOffset(170 * s, 80 * s)
 end
 
--- OPTIMIZACIÓN: Solo actualizar textos si cambiaron, para no forzar redibujado
 local function updatePlayerESP()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LP or sameTeam(plr) or not alive(plr) then hideP(plr); continue end
@@ -864,6 +919,7 @@ local function updatePlayerESP()
 
         local bgFrame = b:FindFirstChild("BG")
         if not bgFrame then continue end
+        
         local nameLbl = bgFrame:FindFirstChild("Name")
         if nameLbl then
             nameLbl.Visible = CFG.PlayerESP and CFG.NameESP
@@ -879,6 +935,7 @@ local function updatePlayerESP()
                 else nameLbl.TextColor3 = C.fg end
             end
         end
+        
         local wepLbl = bgFrame:FindFirstChild("Wep")
         if wepLbl then
             wepLbl.Visible = CFG.PlayerESP and CFG.WeaponESP
@@ -887,6 +944,24 @@ local function updatePlayerESP()
                 if wepLbl.Text ~= w then wepLbl.Text = w end
             end
         end
+        
+        -- WEAPON ICON
+        local wepIcon = bgFrame:FindFirstChild("WepIcon")
+        if wepIcon then
+            if CFG.PlayerESP and CFG.WeaponIconESP then
+                local tool = getEquippedTool(plr)
+                local tex = getToolIcon(tool)
+                if tex then
+                    if wepIcon.Image ~= tex then wepIcon.Image = tex end
+                    wepIcon.Visible = true
+                else
+                    wepIcon.Visible = false
+                end
+            else
+                wepIcon.Visible = false
+            end
+        end
+        
         local hpBg = bgFrame:FindFirstChild("HpBg")
         local hpFill = hpBg and hpBg:FindFirstChild("HpFill")
         local hpTxt = bgFrame:FindFirstChild("HpTxt")
@@ -902,6 +977,7 @@ local function updatePlayerESP()
                 hpBg.Visible = true; hpTxt.Visible = true
             else hpBg.Visible = false; hpTxt.Visible = false end
         end
+        
         local stBg = bgFrame:FindFirstChild("StBg")
         local stFill = stBg and stBg:FindFirstChild("StFill")
         local stTxt = bgFrame:FindFirstChild("StTxt")
@@ -917,6 +993,7 @@ local function updatePlayerESP()
                 else stBg.Visible = false; stTxt.Visible = false end
             else stBg.Visible = false; stTxt.Visible = false end
         end
+        
         local distLbl = bgFrame:FindFirstChild("Dist")
         if distLbl then
             local dt = ""
@@ -924,6 +1001,7 @@ local function updatePlayerESP()
             else dt = string.format("%dm", math.floor(dist)) end
             if distLbl.Text ~= dt then distLbl.Text = dt end
         end
+        
         local stroke = bgFrame:FindFirstChildOfClass("UIStroke")
         if stroke then
             local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
@@ -1322,7 +1400,7 @@ new("TextLabel", {
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  optimized",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v4",
     TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
@@ -1706,7 +1784,7 @@ toggle(aimPage, "Activar", "Enabled")
 toggle(aimPage, "Camera lock", "CameraLock")
 toggle(aimPage, "Solo al disparar", "AimOnFireOnly")
 slider(aimPage, "FOV", "FOV", 30, 400, false, function(v) CFG.FOVRadius = v end)
-slider(aimPage, "Smoothness", "Smoothness", 0.05, 0.8, true)
+slider(aimPage, "Smoothness", "Smoothness", 0.05, 0.95, true)
 slider(aimPage, "Car Smoothness", "CarSmoothness", 0.1, 1, true)
 slider(aimPage, "Dist. max", "MaxDistance", 100, 1500, false)
 partSelector(aimPage)
@@ -1736,7 +1814,8 @@ section(espPage, "JUGADORES")
 toggle(espPage, "ESP jugadores", "PlayerESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Nombre por HP", "NameColorByHP")
-toggle(espPage, "Armas", "WeaponESP")
+toggle(espPage, "Armas (texto)", "WeaponESP")
+toggle(espPage, "Armas (icono)", "WeaponIconESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
 toggle(espPage, "Stamina", "StaminaESP")
 toggle(espPage, "Solo armados", "ArmedOnlyESP")
@@ -1791,6 +1870,19 @@ section(safePage, "AUTO-SAVE")
 toggle(safePage, "Auto-save activado", "AutoSaveEnabled")
 slider(safePage, "Intervalo (seg)", "AutoSaveInterval", 5, 60, false)
 toggle(safePage, "Mostrar toast al guardar", "AutoSaveToast")
+section(safePage, "CONFIG RAPIDA")
+actionBtn(safePage, "Cargar config RECOMENDADA", C.accent, function()
+    local d = defaultCfg()
+    for k, v in pairs(d) do CFG[k] = v end
+    CFG.ESPColor = Color3.new(unpack(DEFAULTS.ESPColor))
+    CFG.FOVRadius = CFG.FOV
+    CFG.HoldKey = resolveKey("MouseButton2", Enum.UserInputType.MouseButton2)
+    CFG.ToggleKey = resolveKey("RightShift", Enum.KeyCode.RightShift)
+    CFG.PanelKey = resolveKey("F1", Enum.KeyCode.F1)
+    CFG.PanicKey = resolveKey("Delete", Enum.KeyCode.Delete)
+    saveConfigTo(CONFIG_FILE, CFG)
+    notify("Config", "Recomendada cargada - recarga script", 4)
+end)
 section(safePage, "PROFILES")
 actionBtn(safePage, "Guardar perfil 1", C.accent3, function() saveConfigTo(CONFIG_FOLDER .. "/profiles/p1.json", CFG); notify("Perfil", "Perfil 1 guardado", 3) end)
 actionBtn(safePage, "Cargar perfil 1", C.bg3, function()
@@ -1815,19 +1907,6 @@ keybindRow(safePage, "Apuntar (hold)", "HoldKey")
 keybindRow(safePage, "Toggle aim", "ToggleKey")
 keybindRow(safePage, "Panel", "PanelKey")
 keybindRow(safePage, "Panic (desactiva todo)", "PanicKey")
-section(safePage, "CONFIG")
-actionBtn(safePage, "Guardar config ahora", C.accent3, function() doSave() end)
-actionBtn(safePage, "Resetear config", C.danger, function()
-    local d = defaultCfg()
-    for k, v in pairs(d) do CFG[k] = v end
-    CFG.ESPColor = Color3.new(unpack(DEFAULTS.ESPColor))
-    CFG.FOVRadius = CFG.FOV
-    CFG.HoldKey = resolveKey("MouseButton2", Enum.UserInputType.MouseButton2)
-    CFG.ToggleKey = resolveKey("RightShift", Enum.KeyCode.RightShift)
-    CFG.PanelKey = resolveKey("F1", Enum.KeyCode.F1)
-    CFG.PanicKey = resolveKey("Delete", Enum.KeyCode.Delete)
-    doSave(); notify("Config", "Reseteada", 3)
-end)
 section(safePage, "PANEL")
 actionBtn(safePage, "Centrar panel", C.bg3, function() panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2) end)
 actionBtn(safePage, "Limpiar ESP", C.bg3, function()
@@ -1836,6 +1915,7 @@ actionBtn(safePage, "Limpiar ESP", C.bg3, function()
 end)
 actionBtn(safePage, "Reiniciar script", C.danger, function()
     pcall(function() if originalDisplayName then LP.DisplayName = originalDisplayName end end)
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
     espScreen:Destroy(); hudScreen:Destroy()
     if saveToastRef then saveToastRef.gui:Destroy() end
     if drawSnapline then pcall(function() drawSnapline:Remove() end) end
@@ -1959,6 +2039,7 @@ minBtn.MouseButton1Click:Connect(togglePanel)
 
 closeBtn.MouseButton1Click:Connect(function()
     pcall(function() if originalDisplayName then LP.DisplayName = originalDisplayName end end)
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
     espScreen:Destroy(); hudScreen:Destroy()
     if saveToastRef then saveToastRef.gui:Destroy() end
     if drawSnapline then pcall(function() drawSnapline:Remove() end) end
@@ -2023,8 +2104,57 @@ local function refreshPlayerList()
     end
 end
 
--- ============ MAIN LOOP ============
-RunService.RenderStepped:Connect(function(dt)
+-- ============ BACKGROUND LOOPS (no priority) ============
+task.spawn(function()
+    while getgenv().BSS_Aim_Loaded do
+        pcall(updatePlayerESP)
+        pcall(updateItemESP)
+        pcall(tryPickup)
+        pcall(trackKills)
+        task.wait(CFG.ESPRefresh)
+    end
+end)
+
+task.spawn(function()
+    while getgenv().BSS_Aim_Loaded do
+        pcall(refreshPlayerList)
+        task.wait(0.5)
+    end
+end)
+
+task.spawn(function()
+    while getgenv().BSS_Aim_Loaded do
+        watermark.Visible = CFG.HUDWatermark
+        if CFG.HUDWatermark then wmLabel.Text = string.format("BSS-Aim · %s", IS_PC and "PC" or "Mobile") end
+        statsHUD.Visible = CFG.HUDStats or CFG.HUDFPS or CFG.HUDPing
+        if statsHUD.Visible then
+            local minutes = math.floor((tick() - sessionStart) / 60)
+            local lines = {}
+            if CFG.HUDStats then
+                lines[#lines+1] = string.format("Kills:    %d", sessionKills)
+                lines[#lines+1] = string.format("Pickups:  %d", sessionPickups)
+                lines[#lines+1] = string.format("Session:  %dm", minutes)
+            end
+            if CFG.HUDFPS then lines[#lines+1] = string.format("FPS:      %d", currentFPS) end
+            if CFG.HUDPing then lines[#lines+1] = string.format("Ping:     %dms", getPing()) end
+            stLabel.Text = table.concat(lines, "\n")
+            local h = 20 + #lines * 16
+            statsHUD.Size = UDim2.fromOffset(180, h)
+        end
+        task.wait(0.5)
+    end
+end)
+
+task.spawn(function()
+    while getgenv().BSS_Aim_Loaded do
+        pcall(applyHideName)
+        task.wait(1.5)
+    end
+end)
+
+-- ============ MAIN LOOP — PRIORIDAD CÁMARA (esto arregla el aim) ============
+pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
+RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1, function(dt)
     fpsCount += 1
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
 
@@ -2116,7 +2246,19 @@ RunService.RenderStepped:Connect(function(dt)
         end
 
         local desired = CFrame.lookAt(camPos, tPos)
+        local px = targetPx()
         local alpha = inCar and CFG.CarSmoothness or CFG.Smoothness
+        
+        -- SNAP AGRESIVO cuando el target esta cerca del centro
+        if CFG.SnapCloseRange then
+            if px < 40 then alpha = 1.0        -- Snap instantáneo
+            elseif px < 100 then alpha = math.max(alpha, 0.92)
+            end
+        end
+        
+        -- Snap duro al disparar (garantiza tiro en target)
+        if isFiring then alpha = 1.0 end
+        
         Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
     else
         if Camera.CameraType == Enum.CameraType.Scriptable then
@@ -2131,56 +2273,9 @@ RunService.RenderStepped:Connect(function(dt)
     pcall(tryFire)
 end)
 
-task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        pcall(updatePlayerESP)
-        pcall(updateItemESP)
-        pcall(tryPickup)
-        pcall(trackKills)
-        task.wait(CFG.ESPRefresh)
-    end
-end)
-
-task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        pcall(refreshPlayerList)
-        task.wait(0.5)
-    end
-end)
-
-task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        watermark.Visible = CFG.HUDWatermark
-        if CFG.HUDWatermark then wmLabel.Text = string.format("BSS-Aim · %s", IS_PC and "PC" or "Mobile") end
-        statsHUD.Visible = CFG.HUDStats or CFG.HUDFPS or CFG.HUDPing
-        if statsHUD.Visible then
-            local minutes = math.floor((tick() - sessionStart) / 60)
-            local lines = {}
-            if CFG.HUDStats then
-                lines[#lines+1] = string.format("Kills:    %d", sessionKills)
-                lines[#lines+1] = string.format("Pickups:  %d", sessionPickups)
-                lines[#lines+1] = string.format("Session:  %dm", minutes)
-            end
-            if CFG.HUDFPS then lines[#lines+1] = string.format("FPS:      %d", currentFPS) end
-            if CFG.HUDPing then lines[#lines+1] = string.format("Ping:     %dms", getPing()) end
-            stLabel.Text = table.concat(lines, "\n")
-            local h = 20 + #lines * 16
-            statsHUD.Size = UDim2.fromOffset(180, h)
-        end
-        task.wait(0.5)
-    end
-end)
-
-task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        pcall(applyHideName)
-        task.wait(1.5)
-    end
-end)
-
 game:BindToClose(function()
     doSave()
 end)
 
-notify("BSS-Aim", (IS_PC and "PC tryhard" or "Mobile") .. " · Optimizado", 6)
-print("[BSS-Aim] cargado - Lag Fix")
+notify("BSS-Aim v4", (IS_PC and "PC tryhard" or "Mobile") .. " · aim fix + weapon icons", 6)
+print("[BSS-Aim v4] cargado")

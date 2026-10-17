@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v12
--- ESP Nombre/HP, No Recoil Real, Keybinds L/M, Car Fix, Pickup Inteligente.
+-- BSS-Aim ULTRA v12.3
+-- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP HP.
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -44,7 +44,7 @@ local ICON_SPLASH = "rbxassetid://96190503453096"
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 12
+local CONFIG_VERSION = 13
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -116,8 +116,8 @@ local DEFAULTS = {
     Enabled = true,
     HoldKey = "E",
     ToggleKey = "RightShift",
-    PanelKey = "L", -- Panel Open
-    CloseKey = "M", -- Panel Close
+    PanelKey = "L",
+    CloseKey = "M",
     PanicKey = "Delete",
     FOV = 130,
     FOVRadius = 130,
@@ -243,7 +243,6 @@ local sessionStart = tick()
 local sessionKills = 0
 local sessionPickups = 0
 local lastHealthSnapshot = {}
-local originalCameraType = Camera.CameraType
 local isFiring = false
 local savedShotRotation = nil
 
@@ -372,10 +371,8 @@ end
 UserInputService.InputBegan:Connect(function(i, gp)
     if gp then return end
     
-    -- Aim Hold
     if i.KeyCode == CFG.HoldKey or i.UserInputType == CFG.HoldKey then aimOn = true end
     
-    -- Firing (Para No Recoil)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.KeyCode == Enum.KeyCode.ButtonR2 then
         isFiring = true
         if CFG.NoRecoil and Camera.CameraType ~= Enum.CameraType.Scriptable then
@@ -383,7 +380,6 @@ UserInputService.InputBegan:Connect(function(i, gp)
         end
     end
 
-    -- Panic
     if i.KeyCode == CFG.PanicKey then
         aimOn = false; CFG.Enabled = false
         notify("PANIC", "Todo desactivado", 3)
@@ -465,10 +461,10 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM (HIGHLIGHT + TEXT HP/NAME)
+-- ESP SYSTEM (HIGHLIGHT + TEXT HP/NAME + SCALING)
 -- ============================================================================
-local pESP = {} -- Highlight
-local tESP = {} -- Text Billboards
+local pESP = {}
+local tESP = {}
 
 local function clearESP(plr)
     if pESP[plr] then pcall(function() pESP[plr]:Destroy() end); pESP[plr] = nil end
@@ -492,7 +488,7 @@ local function updateESP()
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearESP(plr); continue end
 
-        -- 1. Highlight (Cuerpo iluminado)
+        -- 1. Highlight
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
@@ -510,25 +506,24 @@ local function updateESP()
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
-        -- 2. Name & Health Text (Billboard)
+        -- 2. Text (Nombre y HP)
         if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP) then
             if not tESP[plr] or not tESP[plr].Parent then
                 local bb = Instance.new("BillboardGui")
-                bb.Name = "BSS_TXT"; bb.Size = UDim2.fromOffset(150, 40)
-                bb.StudsOffsetWorldSpace = Vector3.new(0, 2.5, 0)
-                bb.AlwaysOnTop = true; bb.Adornee = head; bb.Parent = head
+                bb.Name = "BSS_TXT"; bb.AlwaysOnTop = true
+                bb.Adornee = head; bb.Parent = head
                 
                 local nameLbl = Instance.new("TextLabel")
                 nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
                 nameLbl.Size = UDim2.new(1, 0, 0, 16); nameLbl.Position = UDim2.new(0, 0, 0, 0)
-                nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 13
+                nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 14
                 nameLbl.TextColor3 = Color3.new(1,1,1); nameLbl.TextStrokeTransparency = 0
                 nameLbl.Parent = bb
                 
                 local hpLbl = Instance.new("TextLabel")
                 hpLbl.Name = "HP"; hpLbl.BackgroundTransparency = 1
                 hpLbl.Size = UDim2.new(1, 0, 0, 14); hpLbl.Position = UDim2.new(0, 0, 0, 16)
-                hpLbl.Font = Enum.Font.Gotham; hpLbl.TextSize = 12
+                hpLbl.Font = Enum.Font.GothamBold; hpLbl.TextSize = 12
                 hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0
                 hpLbl.Parent = bb
                 
@@ -536,14 +531,18 @@ local function updateESP()
             end
             
             local bbg = tESP[plr]
+            local scale = math.clamp(dist / CFG.MaxESP, 0, 1)
+            local sizeMultiplier = 1 + (scale * 1.5) 
+            bbg.Size = UDim2.fromOffset(150 * sizeMultiplier, 40 * sizeMultiplier)
+            bbg.StudsOffsetWorldSpace = Vector3.new(0, 3 * sizeMultiplier, 0)
+
             local nameLbl = bbg:FindFirstChild("Name")
-            local hpLbl = bbg:FindFirstChild("HP")
-            
             if nameLbl then
                 nameLbl.Visible = CFG.NameESP
                 nameLbl.Text = plr.Name
             end
             
+            local hpLbl = bbg:FindFirstChild("HP")
             if hpLbl then
                 hpLbl.Visible = CFG.HealthESP
                 hpLbl.Text = string.format("%d HP", math.floor(hum.Health))
@@ -561,7 +560,7 @@ local function updateESP()
 end
 
 -- ============================================================================
--- PICKUP (SOLO DROPS DEL JUEGO)
+-- PICKUP
 -- ============================================================================
 local lastPickup = 0
 local function tryPickup()
@@ -572,7 +571,6 @@ local function tryPickup()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     
-    -- SOLO buscar en DroppedItems del Workspace. Ignorar todo lo demás.
     local folder = Workspace:FindFirstChild("DroppedItems")
     if not folder then return end
     
@@ -583,7 +581,6 @@ local function tryPickup()
         
         local d = (hrp.Position - part.Position).Magnitude
         if d < CFG.PickupRadius then
-            -- Chequeo de categorias
             local n = m.Name:lower()
             local ok = false
             if n:find("money") or n:find("cash") then ok = CFG.PickupMoney
@@ -638,18 +635,14 @@ local FONT_LABEL = 11; local FONT_SMALL = 10; local ROW_H = 34; local TAB_H = 30
 local panel = new("Frame", { Size = UDim2.fromOffset(W, H), Position = UDim2.new(0.5, -W/2, 0.5, -H/2), BackgroundColor3 = C.bg, BackgroundTransparency = 0, BorderSizePixel = 0, Parent = sg })
 corner(panel, 16); neonStroke(panel, C.border)
 
--- (UI Setup omitted for brevity, identical to v11 just with L/M keybinds in CFG)
--- But wait, I need to paste the FULL code. I will include the UI.
-
 local header = new("Frame", { Size = UDim2.new(1, 0, 0, 44), Position = UDim2.new(0, 0, 0, 4), BackgroundColor3 = Color3.fromRGB(10, 10, 12), BorderSizePixel = 0, Parent = panel })
--- Logo, title etc...
 local logo = new("Frame", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(0, 12, 0.5, -15), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, Parent = header })
 corner(logo, 9); new("UIStroke", { Color = Color3.fromRGB(255, 255, 255), Thickness = 2, Transparency = 0.2, Parent = logo })
 local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.AnchorPoint = Vector2.new(0.5, 0.5); logoIcon.Position = UDim2.fromScale(0.5, 0.5)
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.3", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -795,7 +788,7 @@ toggle(espPage, "Activar ESP", "PlayerESP")
 toggle(espPage, "Cuerpo iluminado", "ChamsESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
-slider(espPage, "Rango ESP", "MaxESP", 50, 1000, false)
+slider(espPage, "Rango ESP", "MaxESP", 50, 1500, false)
 
 local hitboxPage = pages["HITBOX"]
 section(hitboxPage, "EXPANDER")
@@ -857,7 +850,8 @@ local function makeDrag(f, h)
 end
 makeDrag(panel, header)
 
-local miniBtn = new("TextButton", { Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0, 20, 0, 100), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, Text = "", AutoButtonColor = false, Active = true, Visible = false, ZIndex = 200, Parent = sg })
+-- MINI BUTTON: Fijo en el medio de arriba
+local miniBtn = new("TextButton", { Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0.5, -28, 0, 20), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, Text = "", AutoButtonColor = false, Active = true, Visible = false, ZIndex = 200, Parent = sg })
 corner(miniBtn, 28); neonStroke(miniBtn, Color3.fromRGB(255, 255, 255))
 local miniIcon = Instance.new("ImageLabel"); miniIcon.AnchorPoint = Vector2.new(0.5, 0.5); miniIcon.Position = UDim2.fromScale(0.5, 0.5)
 miniIcon.Size = UDim2.fromScale(0.72, 0.72); miniIcon.BackgroundTransparency = 1
@@ -865,8 +859,7 @@ miniIcon.Image = ICON_SPLASH; miniIcon.ImageColor3 = Color3.fromRGB(10, 10, 12);
 
 miniBtn.MouseButton1Click:Connect(function()
     panel.Visible = true; panel.Size = UDim2.fromOffset(1, 1)
-    local mp = miniBtn.AbsolutePosition
-    panel.Position = UDim2.new(0, mp.X - W/2 + 28, 0, mp.Y)
+    panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2) -- Abre en el medio
     TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W, H) }):Play()
     miniBtn.Visible = false
 end)
@@ -876,19 +869,20 @@ local function openPanel()
         miniBtn.Visible = false
         panel.Visible = true
         panel.Size = UDim2.fromOffset(1, 1)
+        panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
         TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W, H) }):Play()
     end
 end
 
 local function closePanel()
     if panel.Visible then
-        local fromP = panel.AbsolutePosition
         local tw = TweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { Size = UDim2.fromOffset(1, 1) })
         tw:Play()
         tw.Completed:Connect(function()
             panel.Visible = false; panel.Size = UDim2.fromOffset(W, H)
-            miniBtn.Position = UDim2.new(0, fromP.X + W - 56, 0, fromP.Y + 4)
-            miniBtn.Size = UDim2.fromOffset(1, 1); miniBtn.Visible = true
+            miniBtn.Visible = true
+            -- Tween para que el circulo aparezca en su lugar fijo arriba
+            miniBtn.Size = UDim2.fromOffset(1, 1)
             TweenService:Create(miniBtn, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(56, 56) }):Play()
         end)
     end
@@ -956,7 +950,6 @@ task.spawn(function()
     end
 end)
 
--- HITBOX LOOP (mantiene el hitbox expandido por si el server lo resetea)
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         if CFG.HitboxExpander then
@@ -980,7 +973,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
 
     local now = tick()
     
-    -- Target selection
     if (aimOn or CFG.TriggerBot) and (now - lastTargetCheck) > 0.05 then
         lastTargetCheck = now
         local _, bestPart, bestScore = getTargetWithScore()
@@ -998,36 +990,41 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         currentTarget = nil
     end
 
-    -- FOV
     if CFG.DrawFOV and CFG.Enabled and aimOn then
         fovCircle.Position = UDim2.fromScale(0.5, 0.5); fovCircle.Size = UDim2.fromOffset(CFG.FOVRadius * 2, CFG.FOVRadius * 2)
         fovStroke.Color = currentTarget and C.aimLock or C.accent; fovCircle.Visible = true
     else fovCircle.Visible = false end
 
-    -- Camera Lock & No Recoil
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        -- Snap instantaneo
+        -- CAR AIM FIX: Forzamos Scriptable para que la camara del vehiculo no gane
+        if inCar then
+            if Camera.CameraType ~= Enum.CameraType.Scriptable then
+                Camera.CameraType = Enum.CameraType.Scriptable
+            end
+        else
+            if Camera.CameraType == Enum.CameraType.Scriptable then
+                Camera.CameraType = Enum.CameraType.Custom
+            end
+        end
+
         local camPos = Camera.CFrame.Position
         local tPos = currentTarget.Position
         Camera.CFrame = CFrame.lookAt(camPos, tPos)
         
-        -- Si estamos en carro, NO cambiamos CameraType, solo movemos la camara.
-        -- Esto evita que la vista se expanda o haga zoom-out.
-        if inCar then
-            Camera.CFrame = CFrame.new(camPos, tPos)
+    else
+        if Camera.CameraType == Enum.CameraType.Scriptable then
+            Camera.CameraType = Enum.CameraType.Custom
         end
         
-    elseif CFG.NoRecoil and isFiring and savedShotRotation then
-        -- NO RECOIL: Si estamos disparando, forzamos la rotacion a como estaba antes.
-        -- Esto cancela cualquier subida del arma (Draco, AK, etc).
-        local currentPos = Camera.CFrame.Position
-        Camera.CFrame = CFrame.new(currentPos) * savedShotRotation
+        if CFG.NoRecoil and isFiring and savedShotRotation then
+            local currentPos = Camera.CFrame.Position
+            Camera.CFrame = CFrame.new(currentPos) * savedShotRotation
+        end
     end
 
-    -- HUD Update
     if CFG.HUDWatermark then
         watermark.Visible = true
     else
@@ -1050,5 +1047,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12", "Cargado con ESP HP, No Recoil y L/M", 6)
-print("[BSS-Aim ULTRA v12] cargado")
+notify("BSS-Aim ULTRA v12.3", "Car Fix, Mini Arriba, No Recoil, HP ESP", 6)
+print("[BSS-Aim ULTRA v12.3] cargado")

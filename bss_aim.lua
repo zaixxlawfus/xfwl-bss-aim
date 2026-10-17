@@ -96,7 +96,6 @@ local function resolveWeapon(toolName)
     return nil
 end
 
--- weapon cache por UserId+toolName — evita O(n²) cada frame
 local weaponCache = {}
 local function getEquippedWeapon(plr)
     local best = nil
@@ -116,7 +115,6 @@ local function getEquippedWeapon(plr)
             end
         end
     end
-    -- cache hit
     local char = plr.Character
     local equipped = char and char:FindFirstChildOfClass("Tool")
     local toolName = equipped and equipped.Name or "__none__"
@@ -350,24 +348,20 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- ANTI-FREEZE: guard de CameraType para evitar flip-flop entre frames
+-- ANTI-FREEZE: guard de CameraType + restauración pre-aim
 -- ============================================================================
--- Bug original: CameraType cambiaba a Scriptable y en el MISMO frame se
--- intentaba asignar CFrame — el motor lo ignoraba silenciosamente y en
--- frames posteriores el flip-flop Scriptable↔Custom acumulaba un deadlock
--- visual que congelaba la mira después de ~30 segundos.
--- Fix: usamos _camTypeApplied para saber si el tipo ya fue aplicado en un
--- frame anterior. Si acabamos de cambiarlo → skip el CFrame este frame.
 local _camTypeApplied = false
 local _lastCamType = Camera.CameraType
+local _preAimCamType = nil          -- guarda el tipo original antes de aim en carro
+local _carAimLerpStarted = false
 
 local function setCamType(t)
     if Camera.CameraType ~= t then
         Camera.CameraType = t
-        _camTypeApplied = false   -- recién cambiado, necesita un frame de gracia
+        _camTypeApplied = false
         _lastCamType = t
     else
-        _camTypeApplied = true    -- ya era el tipo correcto, CFrame es writable
+        _camTypeApplied = true
     end
 end
 
@@ -436,7 +430,6 @@ end
 refreshFilter()
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.4); refreshFilter()
-    -- limpia cache de armas al respawn
     weaponCache = {}
     local hum = char:WaitForChild("Humanoid", 3)
     if hum then hum:GetPropertyChangedSignal("SeatPart"):Connect(function() task.wait(0.1); refreshFilter() end) end
@@ -498,7 +491,6 @@ UserInputService.InputBegan:Connect(function(i, gp)
     if i.KeyCode == CFG.HoldKey or i.UserInputType == CFG.HoldKey then aimOn = true end
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.KeyCode == Enum.KeyCode.ButtonR2 then
         isFiring = true
-        -- guardamos la rotación ANTES de que el aim la modifique este frame
         if CFG.NoRecoil and Camera.CameraType ~= Enum.CameraType.Scriptable then
             savedShotRotation = Camera.CFrame.Rotation
         end
@@ -598,7 +590,6 @@ local function updateESP()
             weapEntry, weapTexture = getEquippedWeapon(plr)
         end
 
-        -- Highlight
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
@@ -614,7 +605,6 @@ local function updateESP()
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
-        -- BillboardGui
         if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
             if not tESP[plr] or not tESP[plr].Parent then
                 local bb = Instance.new("BillboardGui")
@@ -1118,7 +1108,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- MAIN LOOP — camera lock con anti-freeze
+-- MAIN LOOP — camera lock con anti-freeze + fix carro
 -- ============================================================================
 local _lastKills = -1; local _lastPickups = -1; local _lastMinutes = -1; local _lastFPS = -1
 
@@ -1149,32 +1139,51 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
-    -- ── CAMERA LOCK con frame-grace anti-freeze ──────────────────────────────
+    -- ── CAMERA LOCK con grace period y fix carro ──────────────────────
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
         if inCar then
-            -- necesita Scriptable para mover la cam en vehículo
+            if _preAimCamType == nil then _preAimCamType = Camera.CameraType end
             setCamType(Enum.CameraType.Scriptable)
-        else
-            -- fuera de carro: Custom es el tipo correcto
-            setCamType(Enum.CameraType.Custom)
-        end
-        -- solo asignamos CFrame si el tipo ya estaba aplicado desde el frame anterior
-        if _camTypeApplied then
-            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
-        end
-        -- si _camTypeApplied == false, este frame solo cambió el tipo
-        -- el próximo frame _camTypeApplied será true y el lookAt va solo
-    else
-        -- aim off → devolvemos a Custom si estaba en Scriptable
-        setCamType(Enum.CameraType.Custom)
-        -- NoRecoil solo cuando no estamos en camera lock activo
-        if CFG.NoRecoil and isFiring and savedShotRotation then
             if _camTypeApplied then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedShotRotation
+                local camPos = Camera.CFrame.Position
+                local toTarget = currentTarget.Position - camPos
+                if toTarget.Magnitude > 1.5 then
+                    local upVec = Camera.CFrame.UpVector
+                    if math.abs(upVec:Dot(toTarget.Unit)) > 0.97 then
+                        upVec = Vector3.new(0, 1, 0)
+                    end
+                    local desired = CFrame.lookAt(camPos, camPos + toTarget.Unit * 10, upVec)
+                    -- lerp rápido: elimina pitch-oscillation del vehicle cam
+                    Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(dt * 40, 0.6, 1))
+                end
+            end
+        else
+            setCamType(Enum.CameraType.Custom)
+            if _camTypeApplied then
+                Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
+            end
+        end
+    else
+        if inCar then
+            if _preAimCamType ~= nil then
+                if Camera.CameraType ~= _preAimCamType then
+                    setCamType(_preAimCamType)
+                else
+                    _camTypeApplied = true
+                end
+                _preAimCamType = nil
+            else
+                _camTypeApplied = true
+            end
+        else
+            setCamType(Enum.CameraType.Custom)
+            if CFG.NoRecoil and isFiring and savedShotRotation then
+                if _camTypeApplied then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedShotRotation
+                end
             end
         end
     end
-    -- marca el tipo como aplicado para el frame siguiente
     _camTypeApplied = true
 
     watermark.Visible = CFG.HUDWatermark
@@ -1190,5 +1199,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     else statsHUD.Visible = false end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Anti-Freeze mira fix, Car Aim, WeaponCache", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — anti-freeze activo")
+notify("BSS-Aim ULTRA v12.4", "Car Aim fix, No Recoil, Anti-Freeze mira", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — car aim fixed")

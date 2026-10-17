@@ -1,4 +1,4 @@
--- BSS-Aim v7 — 2D ESP (ScreenGui) + Hide Name Total + Aim perfecto
+-- BSS-Aim v8 — Aim PreRender Fix + ESP 2D + Hide Name Real
 -- discord.gg/syncrypt
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -39,7 +39,7 @@ local ICON_SPLASH = "rbxassetid://96190503453096"
 local CONFIG_FOLDER = "BSS_Aim"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 7
+local CONFIG_VERSION = 8
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -158,7 +158,6 @@ if saved and saved.ConfigVersion == CONFIG_VERSION then
         if CFG[k] ~= nil or k == "ESPColor" then CFG[k] = v end
     end
 else
-    -- Forzar recomendados si es version vieja
     CFG.HoldKey = resolveKey("MouseButton2", Enum.UserInputType.MouseButton2)
     CFG.ToggleKey = resolveKey("RightShift", Enum.KeyCode.RightShift)
     CFG.PanelKey = resolveKey("F1", Enum.KeyCode.F1)
@@ -221,7 +220,7 @@ local originalCameraType = Camera.CameraType
 local isFiring = false
 local savedShotRotation = nil
 
--- ============ HIDE NAME TOTAL ============
+-- ============ HIDE NAME REAL ============
 local originalDisplayName = nil
 local function applyHideName()
     pcall(function()
@@ -232,7 +231,6 @@ local function applyHideName()
         StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideLeaderboard)
         StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName)
     end)
-    -- Ocultar leaderboards/chat personalizados del juego
     pcall(function()
         local pg = LP:FindFirstChild("PlayerGui")
         if pg then
@@ -460,32 +458,27 @@ local function createPlayerESP()
     local container = Instance.new("Frame")
     container.Name = "Container"; container.BackgroundTransparency = 1; container.BorderSizePixel = 0; container.Visible = false; container.Parent = espGui
     
-    -- Box
     local box = Instance.new("Frame")
     box.Name = "Box"; box.BackgroundTransparency = 1; box.BorderSizePixel = 0; box.Size = UDim2.fromScale(1, 1); box.Parent = container
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Color = CFG.ESPColor; boxStroke.Thickness = 1; boxStroke.Parent = box
     
-    -- Name
     local nameLbl = Instance.new("TextLabel")
     nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1; nameLbl.Position = UDim2.new(0, 0, 0, -18); nameLbl.Size = UDim2.new(1, -24, 0, 16)
     nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 13; nameLbl.TextColor3 = Color3.fromRGB(255,255,255)
     nameLbl.TextStrokeTransparency = 0; nameLbl.TextStrokeColor3 = Color3.fromRGB(0,0,0); nameLbl.TextXAlignment = Enum.TextXAlignment.Left
     nameLbl.Parent = container
     
-    -- Weap Icon
     local wepIcon = Instance.new("ImageLabel")
     wepIcon.Name = "WepIcon"; wepIcon.BackgroundTransparency = 1; wepIcon.Position = UDim2.new(1, -24, 0, -22); wepIcon.Size = UDim2.fromOffset(24, 24)
     wepIcon.ScaleType = Enum.ScaleType.Fit; wepIcon.Visible = false; wepIcon.Parent = container
     
-    -- Dist
     local distLbl = Instance.new("TextLabel")
     distLbl.Name = "Dist"; distLbl.BackgroundTransparency = 1; distLbl.Position = UDim2.new(0, 0, 1, 2); distLbl.Size = UDim2.new(1, 0, 0, 14)
     distLbl.Font = Enum.Font.GothamBold; distLbl.TextSize = 11; distLbl.TextColor3 = CFG.ESPColor
     distLbl.TextStrokeTransparency = 0; distLbl.TextStrokeColor3 = Color3.fromRGB(0,0,0); distLbl.TextXAlignment = Enum.TextXAlignment.Center
     distLbl.Parent = container
     
-    -- Health Bar
     local hpBg = Instance.new("Frame")
     hpBg.Name = "HpBg"; hpBg.BackgroundColor3 = Color3.fromRGB(0,0,0); hpBg.BorderSizePixel = 1; hpBg.BorderColor3 = Color3.fromRGB(0,0,0)
     hpBg.Position = UDim2.new(0, -5, 0, 0); hpBg.Size = UDim2.new(0, 3, 1, 0); hpBg.Parent = container
@@ -507,19 +500,34 @@ local function createItemESP()
     return container
 end
 
--- Clean up ESP
 local function clearESP(plr)
     local t = pESP[plr]
     if t then t:Destroy(); pESP[plr] = nil end
     clearChams(plr)
 end
-
 local function clearItemESP(m)
     local t = iESP[m]
     if t then t:Destroy(); iESP[m] = nil end
 end
 
--- Dibujar ESP 2D
+local function readItemAmount(model)
+    local bb = model:FindFirstChild("AmountBillboardGui", true)
+    if not bb then return nil end
+    local tl = bb:FindFirstChild("TextLabel")
+    if not tl then return nil end
+    return tl.Text
+end
+
+local function classifyItem(name)
+    local n = name:lower()
+    if n == "money" or n:find("cash") then return C.money, "$"
+    elseif n:find("taser") or n:find("gun") or n:find("weapon") or n:find("ak") or n:find("pistol") or n:find("rifle") then return C.weapon, "[G]"
+    elseif n:find("food") or n:find("burger") or n:find("pizza") or n:find("drink") then return C.food, "[F]"
+    elseif n:find("tool") or n:find("wrench") or n:find("hammer") then return C.tool, "[T]"
+    end
+    return Color3.fromRGB(255, 200, 90), "[I]"
+end
+
 local function drawESP()
     -- Jugadores
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -549,7 +557,6 @@ local function drawESP()
             continue
         end
         
-        -- Calcular 2D Box
         local topPos = head.Position + Vector3.new(0, 0.5, 0)
         local bottomPos = hrp.Position - Vector3.new(0, 3, 0)
         
@@ -572,22 +579,14 @@ local function drawESP()
         local t = pESP[plr]
         t.Visible = true
         
-        -- Escala
-        local maxD = CFG.MaxESP
-        local minS = CFG.ESPMinScale
-        local maxS = CFG.ESPMaxScale
-        local s = maxS + (minS - maxS) * math.clamp(dist / maxD, 0, 1)
-        
         t.Position = UDim2.fromOffset(x, y)
         t.Size = UDim2.fromOffset(width, height)
         
-        -- Chams
         if CFG.ChamsESP then
             local ch = ensureChams(plr, char)
             if ch then ch.Enabled = true; ch.FillColor = CFG.ESPColor end
         else clearChams(plr) end
         
-        -- Nombre
         local nameLbl = t:FindFirstChild("Name")
         if nameLbl then
             nameLbl.Visible = CFG.PlayerESP and CFG.NameESP
@@ -604,7 +603,6 @@ local function drawESP()
             end
         end
         
-        -- Arma
         local wepIcon = t:FindFirstChild("WepIcon")
         if wepIcon then
             if CFG.PlayerESP and CFG.WeaponIconESP then
@@ -616,14 +614,12 @@ local function drawESP()
             else wepIcon.Visible = false end
         end
         
-        -- Distancia
         local distLbl = t:FindFirstChild("Dist")
         if distLbl then
             local dt = CFG.DistanceStuds and string.format("%d studs", math.floor(dist * 3.28)) or string.format("%dm", math.floor(dist))
             if distLbl.Text ~= dt then distLbl.Text = dt end
         end
         
-        -- Vida
         local hpBg = t:FindFirstChild("HpBg")
         local hpFill = hpBg and hpBg:FindFirstChild("HpFill")
         if hpBg and hpFill then
@@ -637,7 +633,6 @@ local function drawESP()
             else hpBg.Visible = false end
         end
         
-        -- Contorno
         local box = t:FindFirstChild("Box")
         if box then
             local stroke = box:FindFirstChildOfClass("UIStroke")
@@ -706,27 +701,8 @@ local function drawESP()
         end
     end
     
-    -- Limpieza
     for plr, t in pairs(pESP) do if not plr.Parent then t:Destroy(); pESP[plr] = nil end end
     for m, t in pairs(iESP) do if not m.Parent then t:Destroy(); iESP[m] = nil end end
-end
-
-local function readItemAmount(model)
-    local bb = model:FindFirstChild("AmountBillboardGui", true)
-    if not bb then return nil end
-    local tl = bb:FindFirstChild("TextLabel")
-    if not tl then return nil end
-    return tl.Text
-end
-
-local function classifyItem(name)
-    local n = name:lower()
-    if n == "money" or n:find("cash") then return C.money, "$"
-    elseif n:find("taser") or n:find("gun") or n:find("weapon") or n:find("ak") or n:find("pistol") or n:find("rifle") then return C.weapon, "[G]"
-    elseif n:find("food") or n:find("burger") or n:find("pizza") or n:find("drink") then return C.food, "[F]"
-    elseif n:find("tool") or n:find("wrench") or n:find("hammer") then return C.tool, "[T]"
-    end
-    return Color3.fromRGB(255, 200, 90), "[I]"
 end
 
 -- ============ PICKUP ============
@@ -875,7 +851,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = FONT_TITLE, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  2D ESP", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v8", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1348,7 +1324,7 @@ task.spawn(function()
     end
 end)
 
--- ============ MAIN LOOP ============
+-- ============ MAIN LOOP (PreRender para evitar temblor) ============
 pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
 RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1, function(dt)
     fpsCount += 1
@@ -1446,5 +1422,5 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
 end)
 
 game:BindToClose(function() doSave() end)
-notify("BSS-Aim v7", (IS_PC and "PC" or "Mobile") .. " · 2D ESP activo", 6)
-print("[BSS-Aim v7] cargado")
+notify("BSS-Aim v8", (IS_PC and "PC" or "Mobile") .. " · Aim Fix + ESP 2D", 6)
+print("[BSS-Aim v8] cargado")

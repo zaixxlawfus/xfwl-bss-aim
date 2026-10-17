@@ -1,4 +1,4 @@
--- BSS-Aim Universal — No Recoil + Aim tryhard fluido
+-- BSS-Aim — Optimized (No Recoil + Aim tryhard + Cero Lag)
 -- discord.gg/syncrypt
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -151,12 +151,12 @@ local DEFAULTS = {
     MaxESP = 450,
     ESPMinScale = 0.5,
     ESPMaxScale = 1.0,
-    ESPRefresh = 0.1,
+    ESPRefresh = 0.15, -- Optimizado para no dar lag
     ESPColor = {1, 1, 1},
     ItemOutline = true,
     AutoPickup = true,
     PickupRadius = 40,
-    PickupDelay = 0.05,
+    PickupDelay = 0.1, -- Optimizado
     PickupMoney = true,
     PickupWeapons = true,
     PickupFood = true,
@@ -217,7 +217,7 @@ CFG.FOVRadius = CFG.FOV
 CFG.PanelOpacity = 1
 getgenv().BSS_AimConfig = CFG
 
--- ============ AUTO-SAVE ENGINE ============
+-- ============ AUTO-SAVE ============
 local dirtyFlag = false
 local lastAutoSave = tick()
 local lastSaveToast = 0
@@ -291,9 +291,7 @@ local function doSave()
     end
 end
 
-local function scheduleSave()
-    dirtyFlag = true
-end
+local function scheduleSave() dirtyFlag = true end
 
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
@@ -354,7 +352,6 @@ local sessionPickups = 0
 local lastHealthSnapshot = {}
 local originalCameraType = Camera.CameraType
 
--- NO RECOIL STATE
 local isFiring = false
 local savedShotRotation = nil
 
@@ -498,22 +495,25 @@ local function visible(target, char)
     return hit.Instance and hit.Instance:IsDescendantOf(char)
 end
 
+-- OPTIMIZACIÓN: Recopila todos los candidatos, los ordena, y hace Raycast solo a los 3 primeros.
 local function getTargetWithScore()
-    local bestPlr, bestPart, bestScore = nil, nil, math.huge
+    local candidates = {}
     local center = Camera.ViewportSize * 0.5
+    
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LP or sameTeam(plr) or not alive(plr) then continue end
         local char = plr.Character
         local part = char:FindFirstChild(CFG.TargetPart) or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
         if not part then continue end
+        
         local wp = part.Position
         local d3 = (Camera.CFrame.Position - wp).Magnitude
         if d3 > CFG.MaxDistance then continue end
+        
         local sp, on = Camera:WorldToViewportPoint(wp)
         if not on then continue end
         local px = (Vector2.new(sp.X, sp.Y) - center).Magnitude
         if px > CFG.FOVRadius then continue end
-        if CFG.WallCheck and not visible(part, char) then continue end
         
         local score = px
         if CFG.Priority == "dist" then score = d3
@@ -526,13 +526,20 @@ local function getTargetWithScore()
             score = d3 - wep * 50
         end
         
-        if score < bestScore then
-            bestScore = score
-            bestPlr = plr
-            bestPart = part
+        table.insert(candidates, {plr = plr, part = part, score = score})
+    end
+    
+    table.sort(candidates, function(a, b) return a.score < b.score end)
+    
+    -- Raycast solo a los 3 mejores para ahorrar lag
+    for i = 1, math.min(3, #candidates) do
+        local c = candidates[i]
+        if not CFG.WallCheck or visible(c.part, c.plr.Character) then
+            return c.plr, c.part, c.score
         end
     end
-    return bestPlr, bestPart, bestScore
+    
+    return nil, nil, math.huge
 end
 
 local function targetDead()
@@ -556,8 +563,6 @@ end
 -- ============ INPUT & NO RECOIL ============
 UIS.InputBegan:Connect(function(i, gp)
     if gp then return end
-    
-    -- Keybinds
     if i.UserInputType == CFG.HoldKey or i.KeyCode == CFG.HoldKey then aimOn = true end
     if i.KeyCode == CFG.ToggleKey then aimOn = not aimOn end
     if i.KeyCode == CFG.PanicKey then
@@ -568,7 +573,6 @@ UIS.InputBegan:Connect(function(i, gp)
         notify("PANIC", "Todo desactivado", 3)
     end
 
-    -- No Recoil: guardar rotacion antes de disparar
     if CFG.NoRecoil and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.KeyCode == Enum.KeyCode.ButtonR2) then
         isFiring = true
         if Camera.CameraType ~= Enum.CameraType.Scriptable then
@@ -581,7 +585,6 @@ UIS.InputEnded:Connect(function(i, gp)
     if gp then return end
     if i.UserInputType == CFG.HoldKey or i.KeyCode == CFG.HoldKey then aimOn = false end
 
-    -- No Recoil: soltar gatillo
     if CFG.NoRecoil and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.KeyCode == Enum.KeyCode.ButtonR2) then
         isFiring = false
         savedShotRotation = nil
@@ -835,6 +838,7 @@ local function updateScale(b, dist)
     b.Size = UDim2.fromOffset(150 * s, 76 * s)
 end
 
+-- OPTIMIZACIÓN: Solo actualizar textos si cambiaron, para no forzar redibujado
 local function updatePlayerESP()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LP or sameTeam(plr) or not alive(plr) then hideP(plr); continue end
@@ -866,7 +870,7 @@ local function updatePlayerESP()
             if nameLbl.Visible then
                 local dispName = plr.Name
                 if CFG.HideName and plr == LP then dispName = CFG.HideNameText or "..." end
-                nameLbl.Text = dispName
+                if nameLbl.Text ~= dispName then nameLbl.Text = dispName end
                 if CFG.NameColorByHP then
                     local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                     if hpR > 0.6 then nameLbl.TextColor3 = C.hp
@@ -878,7 +882,10 @@ local function updatePlayerESP()
         local wepLbl = bgFrame:FindFirstChild("Wep")
         if wepLbl then
             wepLbl.Visible = CFG.PlayerESP and CFG.WeaponESP
-            if wepLbl.Visible then wepLbl.Text = weapons(plr) or "—" end
+            if wepLbl.Visible then
+                local w = weapons(plr) or "—"
+                if wepLbl.Text ~= w then wepLbl.Text = w end
+            end
         end
         local hpBg = bgFrame:FindFirstChild("HpBg")
         local hpFill = hpBg and hpBg:FindFirstChild("HpFill")
@@ -890,7 +897,8 @@ local function updatePlayerESP()
                 if hp > 0.6 then hpFill.BackgroundColor3 = C.hp
                 elseif hp > 0.3 then hpFill.BackgroundColor3 = Color3.fromRGB(240, 200, 80)
                 else hpFill.BackgroundColor3 = C.danger end
-                hpTxt.Text = string.format("HP %d/%d", math.floor(hum.Health), math.floor(hum.MaxHealth))
+                local hpt = string.format("HP %d/%d", math.floor(hum.Health), math.floor(hum.MaxHealth))
+                if hpTxt.Text ~= hpt then hpTxt.Text = hpt end
                 hpBg.Visible = true; hpTxt.Visible = true
             else hpBg.Visible = false; hpTxt.Visible = false end
         end
@@ -903,15 +911,18 @@ local function updatePlayerESP()
                 if sv and sm then
                     local r = math.clamp(sv / sm, 0, 1)
                     stFill.Size = UDim2.new(r, 0, 1, 0)
-                    stTxt.Text = string.format("ST %d/%d", math.floor(sv), math.floor(sm))
+                    local stt = string.format("ST %d/%d", math.floor(sv), math.floor(sm))
+                    if stTxt.Text ~= stt then stTxt.Text = stt end
                     stBg.Visible = true; stTxt.Visible = true
                 else stBg.Visible = false; stTxt.Visible = false end
             else stBg.Visible = false; stTxt.Visible = false end
         end
         local distLbl = bgFrame:FindFirstChild("Dist")
         if distLbl then
-            if CFG.DistanceStuds then distLbl.Text = string.format("%d studs", math.floor(dist * 3.28))
-            else distLbl.Text = string.format("%dm", math.floor(dist)) end
+            local dt = ""
+            if CFG.DistanceStuds then dt = string.format("%d studs", math.floor(dist * 3.28))
+            else dt = string.format("%dm", math.floor(dist)) end
+            if distLbl.Text ~= dt then distLbl.Text = dt end
         end
         local stroke = bgFrame:FindFirstChildOfClass("UIStroke")
         if stroke then
@@ -1010,12 +1021,15 @@ local function updateItemESP()
         b.Size = UDim2.fromOffset(110 * s, 20 * s)
         local lbl = b:FindFirstChild("Label")
         if lbl then
-            lbl.Text = string.format("%s %s [%dm]", icon, label, math.floor(dist))
-            lbl.TextColor3 = color
-            local st = lbl:FindFirstChildOfClass("UIStroke")
-            if st then
-                if CFG.ItemOutline then st.Color = Color3.fromRGB(0, 0, 0); st.Thickness = 2
-                else st.Color = color; st.Thickness = 1 end
+            local txt = string.format("%s %s [%dm]", icon, label, math.floor(dist))
+            if lbl.Text ~= txt then
+                lbl.Text = txt
+                lbl.TextColor3 = color
+                local st = lbl:FindFirstChildOfClass("UIStroke")
+                if st then
+                    if CFG.ItemOutline then st.Color = Color3.fromRGB(0, 0, 0); st.Thickness = 2
+                    else st.Color = color; st.Thickness = 1 end
+                end
             end
         end
     end
@@ -1308,7 +1322,7 @@ new("TextLabel", {
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  no recoil",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  optimized",
     TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
@@ -1994,7 +2008,8 @@ local function refreshPlayerList()
         if nl then
             local dName = plr.Name
             if CFG.HideName and plr == LP then dName = CFG.HideNameText or "..." end
-            nl.Text = string.format("%s  ·  HP %s  ·  %s", dName, hpStr, dStr)
+            local txt = string.format("%s  ·  HP %s  ·  %s", dName, hpStr, dStr)
+            if nl.Text ~= txt then nl.Text = txt end
             if hum then
                 local r2 = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                 if r2 > 0.6 then nl.TextColor3 = C.hp
@@ -2014,7 +2029,7 @@ RunService.RenderStepped:Connect(function(dt)
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
 
     local now = tick()
-    if (aimOn or CFG.TriggerBot or CFG.AutoFire) and (now - lastTargetCheck) > 0.05 then
+    if (aimOn or CFG.TriggerBot or CFG.AutoFire) and (now - lastTargetCheck) > 0.08 then
         lastTargetCheck = now
         if not (CFG.AimOnFireOnly and not aimOn) then
             local _, bestPart, bestScore = getTargetWithScore()
@@ -2071,7 +2086,6 @@ RunService.RenderStepped:Connect(function(dt)
         elseif drawSnapline then drawSnapline.Visible = false end
     end
 
-    -- CAMERA LOCK & NO RECOIL & CAR LOGIC
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
@@ -2108,8 +2122,6 @@ RunService.RenderStepped:Connect(function(dt)
         if Camera.CameraType == Enum.CameraType.Scriptable then
             Camera.CameraType = originalCameraType
         end
-        
-        -- NO RECOIL: si no estamos lockeando con aimbot y estamos disparando, forzamos la rotacion
         if CFG.NoRecoil and isFiring and savedShotRotation then
             local currentPos = Camera.CFrame.Position
             Camera.CFrame = CFrame.new(currentPos) * savedShotRotation
@@ -2170,5 +2182,5 @@ game:BindToClose(function()
     doSave()
 end)
 
-notify("BSS-Aim", (IS_PC and "PC tryhard" or "Mobile") .. " · No Recoil + Aim tryhard", 6)
-print("[BSS-Aim] cargado")
+notify("BSS-Aim", (IS_PC and "PC tryhard" or "Mobile") .. " · Optimizado", 6)
+print("[BSS-Aim] cargado - Lag Fix")

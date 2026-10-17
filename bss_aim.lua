@@ -1,10 +1,10 @@
--- BSS-Aim v16 — triggerbot, chams, HUD, playerlist, profiles, filtros
+-- BSS-Aim v17 — tema blanco neon + icon splash
 -- discord.gg/syncrypt
 -- Auto-detect mobile/PC · Compatible: Delta, Xeno, Codex, PC
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-if getgenv().BSS_AimV16 then return end
-getgenv().BSS_AimV16 = true
+if getgenv().BSS_AimV17 then return end
+getgenv().BSS_AimV17 = true
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -18,6 +18,8 @@ local Camera = WS.CurrentCamera
 
 local IS_MOBILE = UIS.TouchEnabled and not UIS.KeyboardEnabled
 local IS_PC = not IS_MOBILE
+
+local ICON_SPLASH = "rbxassetid://96190503453096"
 
 -- ============ FILE IO ============
 local CONFIG_FOLDER = "BSS_Aim"
@@ -92,7 +94,6 @@ end
 
 -- ============ DEFAULTS ============
 local DEFAULTS = {
-    -- AIM
     Enabled = true,
     HoldKey = "MouseButton2",
     ToggleKey = "RightShift",
@@ -114,10 +115,9 @@ local DEFAULTS = {
     AutoFireDelay = 0.15,
     TriggerBot = false,
     TriggerDelay = 0.05,
-    Priority = "fov",            -- "fov" | "dist" | "weak" | "danger"
+    Priority = "fov",
     IgnoreHighHP = false,
     IgnoreHPThreshold = 80,
-    -- ESP
     PlayerESP = true,
     WeaponESP = true,
     ItemESP = true,
@@ -136,9 +136,8 @@ local DEFAULTS = {
     ESPMinScale = 0.5,
     ESPMaxScale = 1.0,
     ESPRefresh = 0.1,
-    ESPColor = {0, 0.94, 0.7},
+    ESPColor = {1, 1, 1},
     ItemOutline = true,
-    -- PICKUP
     AutoPickup = true,
     PickupRadius = 40,
     PickupDelay = 0.05,
@@ -149,13 +148,11 @@ local DEFAULTS = {
     PickupWhitelist = "",
     PickupBlacklist = "",
     PickupNotify = false,
-    -- HUD
     HUDWatermark = true,
     HUDStats = true,
     HUDPlayerList = false,
     HUDFPS = true,
     HUDPing = true,
-    -- SAFETY
     Notifications = true,
     PanelOpacity = 1.0,
 }
@@ -163,11 +160,7 @@ local DEFAULTS = {
 local function defaultCfg()
     local c = {}
     for k, v in pairs(DEFAULTS) do
-        if type(v) == "table" then
-            c[k] = {unpack(v)}
-        else
-            c[k] = v
-        end
+        if type(v) == "table" then c[k] = {unpack(v)} else c[k] = v end
     end
     return c
 end
@@ -186,7 +179,6 @@ local function resolveKey(s, default)
     return default
 end
 
--- ============ CONFIG LOAD ============
 local CFG = defaultCfg()
 local saved = loadConfigFrom(CONFIG_FILE)
 if saved then
@@ -212,20 +204,20 @@ local function scheduleSave()
     end)
 end
 
--- ============ COLORS ============
+-- ============ TEMA BLANCO NEON ============
 local C = {
-    bg      = Color3.fromRGB(8, 9, 14),
-    bg2     = Color3.fromRGB(14, 16, 24),
-    bg3     = Color3.fromRGB(22, 25, 36),
-    bg4     = Color3.fromRGB(32, 36, 50),
-    accent  = Color3.fromRGB(0, 240, 180),
-    accent2 = Color3.fromRGB(180, 100, 255),
-    accent3 = Color3.fromRGB(0, 180, 255),
-    pink    = Color3.fromRGB(255, 100, 200),
-    fg      = Color3.fromRGB(240, 242, 250),
-    muted   = Color3.fromRGB(110, 118, 138),
+    bg      = Color3.fromRGB(6, 6, 8),
+    bg2     = Color3.fromRGB(12, 12, 16),
+    bg3     = Color3.fromRGB(20, 20, 26),
+    bg4     = Color3.fromRGB(32, 32, 40),
+    accent  = Color3.fromRGB(255, 255, 255),
+    accent2 = Color3.fromRGB(220, 220, 230),
+    accent3 = Color3.fromRGB(180, 180, 190),
+    pink    = Color3.fromRGB(255, 255, 255),
+    fg      = Color3.fromRGB(245, 245, 250),
+    muted   = Color3.fromRGB(140, 140, 155),
     danger  = Color3.fromRGB(255, 70, 90),
-    border  = Color3.fromRGB(45, 50, 68),
+    border  = Color3.fromRGB(60, 60, 72),
     money   = Color3.fromRGB(120, 240, 130),
     weapon  = Color3.fromRGB(255, 130, 130),
     tool    = Color3.fromRGB(120, 180, 255),
@@ -233,7 +225,7 @@ local C = {
     hp      = Color3.fromRGB(80, 220, 120),
     stamina = Color3.fromRGB(255, 210, 60),
     aimOn   = Color3.fromRGB(255, 80, 90),
-    aimLock = Color3.fromRGB(80, 255, 120),
+    aimLock = Color3.fromRGB(255, 255, 255),
 }
 
 local function getParent()
@@ -255,14 +247,12 @@ end
 -- ============ STATE ============
 local aimOn = false
 local currentTarget = nil
-local currentTargetPlr = nil
 local lastSwitch = 0
 local aimBtn, miniBtn = nil, nil
 local sessionStart = tick()
 local sessionKills = 0
 local sessionPickups = 0
 local lastHealthSnapshot = {}
-local panicMode = false
 
 -- ============ FOV CIRCLE ============
 local espScreen = Instance.new("ScreenGui")
@@ -389,7 +379,6 @@ local function predictPos(plr, part, dt)
     return part.Position + vel * CFG.Prediction
 end
 
--- score según prioridad
 local function scoreTarget(plr, char, part, px, d3)
     if CFG.IgnoreHighHP then
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -399,10 +388,8 @@ local function scoreTarget(plr, char, part, px, d3)
     elseif CFG.Priority == "dist" then return d3
     elseif CFG.Priority == "weak" then
         local hum = char:FindFirstChildOfClass("Humanoid")
-        local hp = hum and hum.Health or 100
-        return hp -- menor HP = mejor
+        return hum and hum.Health or 100
     elseif CFG.Priority == "danger" then
-        -- considera el más cercano + el más armado
         local wep = 0
         for _, c in ipairs(char:GetChildren()) do
             if c:IsA("Tool") then wep += 1 end
@@ -463,7 +450,6 @@ UIS.InputBegan:Connect(function(i, gp)
     if i.UserInputType == CFG.HoldKey or i.KeyCode == CFG.HoldKey then aimOn = true end
     if i.KeyCode == CFG.ToggleKey then aimOn = not aimOn end
     if i.KeyCode == CFG.PanicKey then
-        -- panic: desactivar todo
         aimOn = false
         CFG.Enabled = false
         if drawSnapline then drawSnapline.Visible = false end
@@ -528,26 +514,14 @@ local function tryFire()
     local now = tick()
     local delay = CFG.TriggerBot and CFG.TriggerDelay or CFG.AutoFireDelay
     if now - lastFire < delay then return end
-    -- verificar que el target esté prácticamente en la mira (px < 8)
     if targetPx() > 8 then return end
     lastFire = now
     pcall(function()
-        -- click virtual en PC
-        if IS_PC then
-            local VIM = game:GetService("VirtualInputManager")
-            if VIM then
-                VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, true, game, 1)
-                task.wait(0.02)
-                VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, false, game, 1)
-            end
-        else
-            -- en móvil usamos mouse1 click via VirtualUser si existe
-            local VIM = game:GetService("VirtualInputManager")
-            if VIM then
-                VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, true, game, 1)
-                task.wait(0.02)
-                VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, false, game, 1)
-            end
+        local VIM = game:GetService("VirtualInputManager")
+        if VIM then
+            VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, true, game, 1)
+            task.wait(0.02)
+            VIM:SendMouseButtonEvent(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2, 0, false, game, 1)
         end
     end)
 end
@@ -763,13 +737,9 @@ local function updatePlayerESP()
         b.MaxDistance = CFG.MaxESP
         updateScale(b, dist)
 
-        -- chams
         if CFG.ChamsESP then
             local ch = ensureChams(plr, char)
-            if ch then
-                ch.Enabled = true
-                ch.FillColor = CFG.ESPColor
-            end
+            if ch then ch.Enabled = true; ch.FillColor = CFG.ESPColor end
         else
             clearChams(plr)
         end
@@ -941,11 +911,9 @@ local function updateItemESP()
             local st = lbl:FindFirstChildOfClass("UIStroke")
             if st then
                 if CFG.ItemOutline then
-                    st.Color = Color3.fromRGB(0, 0, 0)
-                    st.Thickness = 2
+                    st.Color = Color3.fromRGB(0, 0, 0); st.Thickness = 2
                 else
-                    st.Color = color
-                    st.Thickness = 1
+                    st.Color = color; st.Thickness = 1
                 end
             end
         end
@@ -966,7 +934,6 @@ local function canPickup(m)
     elseif n:find("food") or n:find("burger") or n:find("pizza") or n:find("drink") then kind = "food"
     elseif n:find("tool") or n:find("wrench") or n:find("hammer") then kind = "tool"
     end
-    -- whitelist
     if CFG.PickupWhitelist ~= "" then
         local found = false
         for token in CFG.PickupWhitelist:gmatch("[^,]+") do
@@ -975,14 +942,12 @@ local function canPickup(m)
         end
         if not found then return false end
     end
-    -- blacklist
     if CFG.PickupBlacklist ~= "" then
         for token in CFG.PickupBlacklist:gmatch("[^,]+") do
             token = token:gsub("^%s+", ""):gsub("%s+$", ""):lower()
             if token ~= "" and n:find(token, 1, true) then return false end
         end
     end
-    -- categorías
     if kind == "money" and not CFG.PickupMoney then return false end
     if kind == "weapon" and not CFG.PickupWeapons then return false end
     if kind == "food" and not CFG.PickupFood then return false end
@@ -1068,7 +1033,6 @@ hudScreen.IgnoreGuiInset = true
 hudScreen.DisplayOrder = 95
 hudScreen.Parent = getParent()
 
--- watermark
 local watermark = Instance.new("Frame")
 watermark.Name = "Watermark"
 watermark.Size = UDim2.fromOffset(240, 26)
@@ -1086,12 +1050,11 @@ wmLabel.Position = UDim2.new(0, 10, 0, 0)
 wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
-wmLabel.TextColor3 = C.fg
+wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim v16"
+wmLabel.Text = "BSS-Aim v17"
 wmLabel.Parent = watermark
 
--- stats HUD (derecha abajo)
 local statsHUD = Instance.new("Frame")
 statsHUD.Name = "Stats"
 statsHUD.Size = UDim2.fromOffset(180, 90)
@@ -1116,7 +1079,6 @@ stLabel.TextWrapped = true
 stLabel.Text = ""
 stLabel.Parent = statsHUD
 
--- ping (via GetNetworkPing)
 local function getPing()
     local ok, ping = pcall(function()
         return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
@@ -1125,12 +1087,10 @@ local function getPing()
     return 0
 end
 
--- fps
 local fpsCount = 0
 local fpsTimer = tick()
 local currentFPS = 60
 
--- playerlist
 local playerListFrame = Instance.new("Frame")
 playerListFrame.Name = "PlayerList"
 playerListFrame.Size = UDim2.fromOffset(200, 280)
@@ -1189,7 +1149,7 @@ end
 
 -- ============ MAIN PANEL ============
 local sg = new("ScreenGui", {
-    Name = "BSS_Aim_V16", ResetOnSpawn = false, IgnoreGuiInset = true,
+    Name = "BSS_Aim_V17", ResetOnSpawn = false, IgnoreGuiInset = true,
     DisplayOrder = 100, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = getParent(),
 })
@@ -1217,38 +1177,48 @@ local grad = new("Frame", {
 corner(grad, 16)
 new("UIGradient", {
     Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, C.accent),
-        ColorSequenceKeypoint.new(0.33, C.accent3),
-        ColorSequenceKeypoint.new(0.66, C.accent2),
-        ColorSequenceKeypoint.new(1, C.pink),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(180, 180, 190)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
     }),
     Parent = grad,
 })
 
 local header = new("Frame", {
     Size = UDim2.new(1, 0, 0, 44), Position = UDim2.new(0, 0, 0, 4),
-    BackgroundColor3 = C.bg2, BorderSizePixel = 0, Parent = panel,
+    BackgroundColor3 = Color3.fromRGB(10, 10, 12), BorderSizePixel = 0, Parent = panel,
 })
+
+-- LOGO con imagen
 local logo = new("Frame", {
     Size = UDim2.fromOffset(30, 30), Position = UDim2.new(0, 12, 0.5, -15),
-    BackgroundColor3 = C.accent, BorderSizePixel = 0, Parent = header,
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    BorderSizePixel = 0, Parent = header,
 })
 corner(logo, 9)
-new("UIStroke", { Color = C.accent, Thickness = 2, Transparency = 0.3, Parent = logo })
-new("TextLabel", {
-    Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "⌖",
-    TextColor3 = C.bg, TextSize = 18, Font = Enum.Font.GothamBold, Parent = logo,
-})
+new("UIStroke", { Color = Color3.fromRGB(255, 255, 255), Thickness = 2, Transparency = 0.2, Parent = logo })
+local logoIcon = Instance.new("ImageLabel")
+logoIcon.Name = "Icon"
+logoIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+logoIcon.Position = UDim2.fromScale(0.5, 0.5)
+logoIcon.Size = UDim2.fromScale(0.72, 0.72)
+logoIcon.BackgroundTransparency = 1
+logoIcon.Image = ICON_SPLASH
+logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12)
+logoIcon.ScaleType = Enum.ScaleType.Fit
+logoIcon.Parent = logo
+
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5),
     BackgroundTransparency = 1, Text = "BSS-AIM",
-    TextColor3 = C.fg, TextSize = FONT_TITLE, Font = Enum.Font.GothamBold,
+    TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = FONT_TITLE,
+    Font = Enum.Font.GothamBold,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "v16 · tryhard pack" or "v16 · mobile"),
+    Text = (IS_PC and "v17 · tryhard" or "v17 · mobile") .. "  ·  white neon",
     TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
@@ -1257,7 +1227,7 @@ local function iconBtn(txt, xOff)
     local b = new("TextButton", {
         Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15),
         BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt,
-        TextColor3 = C.fg, TextSize = 16, Font = Enum.Font.GothamBold,
+        TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold,
         AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2,
     })
     corner(b, 9)
@@ -1267,7 +1237,6 @@ end
 local minBtn = iconBtn("—", -76)
 local closeBtn = iconBtn("×", -40)
 
--- tabs
 local tabsFrame = new("Frame", {
     Size = UDim2.new(1, -24, 0, TAB_H), Position = UDim2.new(0, 12, 0, 56),
     BackgroundColor3 = C.bg2, BorderSizePixel = 0, Parent = panel,
@@ -1308,7 +1277,7 @@ local function selectTab(name)
     end
 end
 
-local TAB_LIST = IS_PC and {"AIM", "ESP", "PICKUP", "HUD", "SAFE"} or {"AIM", "ESP", "PICKUP", "HUD", "SAFE"}
+local TAB_LIST = {"AIM", "ESP", "PICKUP", "HUD", "SAFE"}
 for i, tname in ipairs(TAB_LIST) do
     local btn = new("TextButton", {
         Size = UDim2.new(1/#TAB_LIST, 0, 1, 0), BackgroundTransparency = 1,
@@ -1399,8 +1368,7 @@ local function toggle(page, label, key, onChange)
     })
     btn.MouseButton1Click:Connect(function()
         CFG[key] = not CFG[key]
-        render(true)
-        scheduleSave()
+        render(true); scheduleSave()
         if onChange then onChange(CFG[key]) end
     end)
     render(false)
@@ -1456,8 +1424,7 @@ local function slider(page, label, key, minV, maxV, isFloat, onChange)
         local v = minV + (maxV - minV) * a
         if not isFloat then v = math.floor(v + 0.5) end
         CFG[key] = v
-        render()
-        scheduleSave()
+        render(); scheduleSave()
         if onChange then onChange(v) end
     end
     local hit = new("TextButton", {
@@ -1498,7 +1465,7 @@ local function textRow(page, label, key, placeholder)
         Size = UDim2.fromOffset(110, 26), Position = UDim2.new(1, -122, 0.5, -13),
         BackgroundColor3 = C.bg3, BorderSizePixel = 0,
         Font = Enum.Font.Gotham, Text = CFG[key] or "",
-        PlaceholderText = placeholder or "..." ,
+        PlaceholderText = placeholder or "...",
         TextColor3 = C.accent, PlaceholderColor3 = C.muted,
         TextSize = 11, ClearTextOnFocus = false, Active = true,
         Parent = row,
@@ -1641,8 +1608,8 @@ local function keybindRow(page, label, key)
             elseif cur.EnumType == Enum.UserInputType then
                 name = cur.Name:gsub("MouseButton", "Mouse") end
         end
-        btn.Text = capturing and "presioná..." or name
-        btn.TextColor3 = capturing and C.pink or C.accent
+        btn.Text = capturing and "..." or name
+        btn.TextColor3 = capturing and C.accent2 or C.accent
     end
     btn.MouseButton1Click:Connect(function() capturing = not capturing; render() end)
     UIS.InputBegan:Connect(function(inp, gp)
@@ -1653,8 +1620,7 @@ local function keybindRow(page, label, key)
             or inp.UserInputType == Enum.UserInputType.MouseButton2 then
             CFG[key] = inp.UserInputType
         end
-        capturing = false
-        render(); scheduleSave()
+        capturing = false; render(); scheduleSave()
     end)
     render()
 end
@@ -1680,14 +1646,13 @@ local function actionBtn(page, label, color, onClick)
 end
 
 -- ============ PÁGINAS ============
--- AIM
 local aimPage = pages["AIM"]
 section(aimPage, "AIMBOT")
 toggle(aimPage, "Activar", "Enabled")
 toggle(aimPage, "Camera lock", "CameraLock")
 toggle(aimPage, "Solo al disparar", "AimOnFireOnly")
 slider(aimPage, "FOV", "FOV", 30, 400, false, function(v) CFG.FOVRadius = v end)
-slider(aimPage, "Lock snap (pegado)", "LockSnap", 0.5, 1, true)
+slider(aimPage, "Lock snap", "LockSnap", 0.5, 1, true)
 slider(aimPage, "Dist. max", "MaxDistance", 100, 1500, false)
 partSelector(aimPage)
 prioritySelector(aimPage)
@@ -1708,7 +1673,6 @@ if IS_PC then
     slider(aimPage, "Prediccion (lead)", "Prediction", 0, 0.3, true)
 end
 
--- ESP
 local espPage = pages["ESP"]
 section(espPage, "JUGADORES")
 toggle(espPage, "ESP jugadores", "PlayerESP")
@@ -1719,7 +1683,7 @@ toggle(espPage, "Vida (HP)", "HealthESP")
 toggle(espPage, "Stamina", "StaminaESP")
 toggle(espPage, "Solo armados", "ArmedOnlyESP")
 section(espPage, "VISUAL")
-toggle(espPage, "Chams (highlight solido)", "ChamsESP")
+toggle(espPage, "Chams (highlight)", "ChamsESP")
 toggle(espPage, "Head dot", "HeadDotESP")
 toggle(espPage, "Snapline al target", "SnaplineESP")
 toggle(espPage, "Distancia en studs", "DistanceStuds")
@@ -1733,7 +1697,6 @@ toggle(espPage, "Borde negro en items", "ItemOutline")
 section(espPage, "RENDIMIENTO")
 slider(espPage, "Refresh", "ESPRefresh", 0.05, 0.5, true)
 
--- PICKUP
 local pickPage = pages["PICKUP"]
 section(pickPage, "AUTO PICKUP")
 toggle(pickPage, "Activar pickup", "AutoPickup")
@@ -1748,26 +1711,7 @@ toggle(pickPage, "Herramientas", "PickupTools")
 section(pickPage, "LISTAS")
 textRow(pickPage, "Whitelist", "PickupWhitelist", "ej: money,ak,taser")
 textRow(pickPage, "Blacklist", "PickupBlacklist", "ej: shovel,food")
-new("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = C.bg2,
-    BorderSizePixel = 0, Font = Enum.Font.Gotham,
-    Text = "Whitelist: solo agarra si el nombre contiene una palabra.\nBlacklist: nunca agarra si contiene una palabra.",
-    TextColor3 = C.muted, TextSize = FONT_SMALL, TextWrapped = true,
-    TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
-    LayoutOrder = nextOrder(), Parent = pickPage,
-})
-local wlNote = pickPage:FindFirstChildWhichIsA("TextLabel")
-if wlNote then
-    corner(wlNote, 9)
-    neonStroke(wlNote, C.border)
-    new("UIPadding", {
-        PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6),
-        PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12),
-        Parent = wlNote,
-    })
-end
 
--- HUD
 local hudPage = pages["HUD"]
 section(hudPage, "HUD")
 toggle(hudPage, "Watermark", "HUDWatermark")
@@ -1781,7 +1725,6 @@ slider(hudPage, "Opacidad panel", "PanelOpacity", 0.5, 1, true, function(v)
 end)
 toggle(hudPage, "Notificaciones", "Notifications")
 
--- SAFE
 local safePage = pages["SAFE"]
 section(safePage, "PROFILES")
 actionBtn(safePage, "Guardar perfil 1", C.accent3, function()
@@ -1795,9 +1738,7 @@ actionBtn(safePage, "Cargar perfil 1", C.bg3, function()
         if type(CFG.ESPColor) == "table" then CFG.ESPColor = Color3.new(unpack(CFG.ESPColor)) end
         saveConfigTo(CONFIG_FILE, CFG)
         notify("Perfil", "Perfil 1 cargado (recargá el script)", 4)
-    else
-        notify("Perfil", "No existe el perfil 1", 3)
-    end
+    else notify("Perfil", "No existe el perfil 1", 3) end
 end)
 actionBtn(safePage, "Guardar perfil 2", C.accent3, function()
     saveConfigTo(CONFIG_FOLDER .. "/profiles/p2.json", CFG)
@@ -1810,9 +1751,7 @@ actionBtn(safePage, "Cargar perfil 2", C.bg3, function()
         if type(CFG.ESPColor) == "table" then CFG.ESPColor = Color3.new(unpack(CFG.ESPColor)) end
         saveConfigTo(CONFIG_FILE, CFG)
         notify("Perfil", "Perfil 2 cargado (recargá el script)", 4)
-    else
-        notify("Perfil", "No existe el perfil 2", 3)
-    end
+    else notify("Perfil", "No existe el perfil 2", 3) end
 end)
 section(safePage, "KEYBINDS")
 keybindRow(safePage, "Apuntar (hold)", "HoldKey")
@@ -1848,12 +1787,11 @@ actionBtn(safePage, "Reiniciar script", C.danger, function()
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV16 = false
+    getgenv().BSS_AimV17 = false
 end)
 
 selectTab("AIM")
 
--- footer
 local footer = new("Frame", {
     Size = UDim2.new(1, -24, 0, 24), Position = UDim2.new(0, 12, 1, -32),
     BackgroundColor3 = C.bg2, BorderSizePixel = 0, Parent = panel,
@@ -1863,12 +1801,11 @@ neonStroke(footer, C.border)
 new("TextLabel", {
     Size = UDim2.new(1, -16, 1, 0), Position = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1, Font = Enum.Font.Gotham,
-    Text = IS_PC and "F1 panel · RMB apunta · panic = DELETE · auto-save ON" or "X = panel · AIM = toggle · panic = DELETE",
+    Text = IS_PC and "F1 panel · RMB apunta · panic = DELETE · auto-save ON" or "X = panel · AIM = toggle",
     TextColor3 = C.muted, TextSize = 9,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = footer,
 })
 
--- drag
 local function makeDrag(f, h)
     local d, s, p
     h.InputBegan:Connect(function(i)
@@ -1891,16 +1828,27 @@ local function makeDrag(f, h)
 end
 makeDrag(panel, header)
 
--- mini
+-- ============ MINI con imagen ============
 miniBtn = new("TextButton", {
     Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0, 20, 0, 100),
-    BackgroundColor3 = C.bg, BorderSizePixel = 0, Text = "X",
-    TextColor3 = C.accent, TextSize = 26, Font = Enum.Font.GothamBold,
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    BorderSizePixel = 0, Text = "",
     AutoButtonColor = false, Active = true, Selectable = true,
     Visible = true, ZIndex = 200, Parent = sg,
 })
 corner(miniBtn, 28)
-neonStroke(miniBtn, C.accent)
+neonStroke(miniBtn, Color3.fromRGB(255, 255, 255))
+
+local miniIcon = Instance.new("ImageLabel")
+miniIcon.Name = "Icon"
+miniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+miniIcon.Position = UDim2.fromScale(0.5, 0.5)
+miniIcon.Size = UDim2.fromScale(0.72, 0.72)
+miniIcon.BackgroundTransparency = 1
+miniIcon.Image = ICON_SPLASH
+miniIcon.ImageColor3 = Color3.fromRGB(10, 10, 12)
+miniIcon.ScaleType = Enum.ScaleType.Fit
+miniIcon.Parent = miniBtn
 
 local miniDragging, miniMoved, miniStartMouse, miniStartPos = false, false, nil, nil
 
@@ -1989,7 +1937,7 @@ closeBtn.MouseButton1Click:Connect(function()
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV16 = false
+    getgenv().BSS_AimV17 = false
 end)
 
 UIS.InputBegan:Connect(function(i, gp)
@@ -2058,7 +2006,6 @@ local SWITCH_HYSTERESIS = 40
 local SWITCH_COOLDOWN = 0.25
 
 RunService.RenderStepped:Connect(function(dt)
-    -- FPS
     fpsCount += 1
     if tick() - fpsTimer >= 1 then
         currentFPS = fpsCount
@@ -2066,20 +2013,14 @@ RunService.RenderStepped:Connect(function(dt)
         fpsTimer = tick()
     end
 
-    -- RENDER (throttle) — solo si estamos listos
-    local alive = CFG.Enabled and (aimOn or CFG.TriggerBot or CFG.AutoFire)
-    -- auto-target
     if aimOn or CFG.TriggerBot or CFG.AutoFire then
-        if CFG.AimOnFireOnly and not aimOn then
-            -- no cambiar
-        else
-            local _, bestPart = getTargetWithScore()
+        if not (CFG.AimOnFireOnly and not aimOn) then
+            local _, bestPart, bestScore = getTargetWithScore()
             if targetDead() then
                 if bestPart then currentTarget = bestPart; lastSwitch = tick()
                 else currentTarget = nil end
             elseif bestPart and bestPart ~= currentTarget then
                 local curPx = targetPx()
-                local _, _, bestScore = getTargetWithScore()
                 if bestScore + SWITCH_HYSTERESIS < curPx
                     and (tick() - lastSwitch) > SWITCH_COOLDOWN then
                     currentTarget = bestPart
@@ -2099,7 +2040,6 @@ RunService.RenderStepped:Connect(function(dt)
         else aimBtn.BackgroundColor3 = Color3.fromRGB(15, 17, 24) end
     end
 
-    -- FOV
     if CFG.DrawFOV and CFG.Enabled and aimOn then
         fovCircle.Position = UDim2.fromScale(0.5, 0.5)
         fovCircle.Size = UDim2.fromOffset(CFG.FOVRadius * 2, CFG.FOVRadius * 2)
@@ -2109,7 +2049,6 @@ RunService.RenderStepped:Connect(function(dt)
         fovCircle.Visible = false
     end
 
-    -- Head dot + snapline (PC)
     if IS_PC then
         if CFG.HeadDotESP and CFG.Enabled and currentTarget then
             local sp, on = Camera:WorldToViewportPoint(currentTarget.Position)
@@ -2132,16 +2071,13 @@ RunService.RenderStepped:Connect(function(dt)
         elseif drawSnapline then drawSnapline.Visible = false end
     end
 
-    -- CAMERA LOCK
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
         local camPos = Camera.CFrame.Position
         local tPos
         if IS_PC and CFG.Prediction > 0 then
             local plr = Players:GetPlayerFromCharacter(currentTarget.Parent)
             if plr then tPos = predictPos(plr, currentTarget, dt) else tPos = currentTarget.Position end
-        else
-            tPos = currentTarget.Position
-        end
+        else tPos = currentTarget.Position end
         local desired = CFrame.lookAt(camPos, tPos)
         Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(CFG.LockSnap, 0, 1))
     end
@@ -2149,9 +2085,8 @@ RunService.RenderStepped:Connect(function(dt)
     pcall(tryFire)
 end)
 
--- loops throttled
 task.spawn(function()
-    while getgenv().BSS_AimV16 do
+    while getgenv().BSS_AimV17 do
         pcall(updatePlayerESP)
         pcall(updateItemESP)
         pcall(tryPickup)
@@ -2161,21 +2096,18 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV16 do
+    while getgenv().BSS_AimV17 do
         pcall(refreshPlayerList)
         task.wait(0.5)
     end
 end)
 
--- HUD refresh
 task.spawn(function()
-    while getgenv().BSS_AimV16 do
-        -- watermark
+    while getgenv().BSS_AimV17 do
         watermark.Visible = CFG.HUDWatermark
         if CFG.HUDWatermark then
-            wmLabel.Text = string.format("BSS-Aim v16 · %s", IS_PC and "PC" or "Mobile")
+            wmLabel.Text = string.format("BSS-Aim v17 · %s", IS_PC and "PC" or "Mobile")
         end
-        -- stats
         statsHUD.Visible = CFG.HUDStats or CFG.HUDFPS or CFG.HUDPing
         if statsHUD.Visible then
             local minutes = math.floor((tick() - sessionStart) / 60)
@@ -2195,8 +2127,7 @@ task.spawn(function()
     end
 end)
 
-notify("BSS-Aim v16", (IS_PC and "PC tryhard" or "Mobile") ..
-    " · auto-save " .. (HAVE_FILE_IO and "ON" or "OFF"), 6)
+notify("BSS-Aim v17", (IS_PC and "PC tryhard" or "Mobile") ..
+    " · white neon · auto-save " .. (HAVE_FILE_IO and "ON" or "OFF"), 6)
 
-print("[BSS-Aim v16] cargado — " .. (IS_PC and "PC tryhard" or "mobile") ..
-      " · auto-save " .. (HAVE_FILE_IO and "ON" or "OFF"))
+print("[BSS-Aim v17] cargado — white neon theme + splash icon")

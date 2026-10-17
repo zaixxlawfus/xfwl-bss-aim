@@ -1,9 +1,9 @@
--- BSS-Aim v18 — aim sin temblor + panel negro arreglado
+-- BSS-Aim v19 — auto-save + hide name + panel blanco neon
 -- discord.gg/syncrypt
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-if getgenv().BSS_AimV18 then return end
-getgenv().BSS_AimV18 = true
+if getgenv().BSS_AimV19 then return end
+getgenv().BSS_AimV19 = true
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -74,11 +74,12 @@ local function deserializeCfg(data)
 end
 
 local function saveConfigTo(path, cfg)
-    if not HAVE_FILE_IO then return end
-    pcall(function()
+    if not HAVE_FILE_IO then return false end
+    local ok = pcall(function()
         ensureFolder()
         writefile(path, HttpService:JSONEncode(serializeCfg(cfg)))
     end)
+    return ok
 end
 
 local function loadConfigFrom(path)
@@ -154,6 +155,12 @@ local DEFAULTS = {
     HUDPing = true,
     Notifications = true,
     PanelOpacity = 1.0,
+    AutoSaveEnabled = true,
+    AutoSaveInterval = 10,
+    AutoSaveToast = true,
+    HideName = false,
+    HideNameText = "...",
+    HideLeaderboard = false,
 }
 
 local function defaultCfg()
@@ -195,14 +202,81 @@ CFG.PanelOpacity = 1
 CFG.LockSnap = 0.72
 getgenv().BSS_AimConfig = CFG
 
-local saveScheduled = false
-local function scheduleSave()
-    if saveScheduled then return end
-    saveScheduled = true
-    task.delay(0.5, function()
-        saveScheduled = false
-        saveConfigTo(CONFIG_FILE, CFG)
+-- ============ AUTO-SAVE ENGINE ============
+local dirtyFlag = false
+local lastAutoSave = tick()
+local lastSaveToast = 0
+local saveToastRef = nil
+
+local function showSaveToast()
+    if not CFG.AutoSaveToast then return end
+    local now = tick()
+    if now - lastSaveToast < 2 then return end
+    lastSaveToast = now
+
+    if not saveToastRef then
+        local parent = LP:FindFirstChild("PlayerGui") or (gethui and gethui())
+        if not parent then return end
+        local t = Instance.new("ScreenGui")
+        t.Name = "BSS_SaveToast"
+        t.ResetOnSpawn = false
+        t.IgnoreGuiInset = true
+        t.DisplayOrder = 200
+        t.Parent = parent
+
+        local frame = Instance.new("Frame")
+        frame.Name = "Toast"
+        frame.Size = UDim2.fromOffset(140, 32)
+        frame.Position = UDim2.new(0.5, -70, 0, 20)
+        frame.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+        frame.BackgroundTransparency = 0.15
+        frame.BorderSizePixel = 0
+        frame.Parent = t
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+        local st = Instance.new("UIStroke")
+        st.Color = Color3.fromRGB(255, 255, 255)
+        st.Thickness = 1.5
+        st.Parent = frame
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Name = "Lbl"
+        lbl.Size = UDim2.fromScale(1, 1)
+        lbl.BackgroundTransparency = 1
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 13
+        lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        lbl.Text = "Guardado"
+        lbl.Parent = frame
+
+        saveToastRef = { gui = t, frame = frame, label = lbl }
+    end
+
+    local t = saveToastRef
+    t.frame.BackgroundTransparency = 0.15
+    t.label.TextTransparency = 0
+    TweenService:Create(t.frame, TweenInfo.new(0.15),
+        { BackgroundTransparency = 0.15 }):Play()
+    t.label.Text = "Guardado OK"
+    t.label.TextColor3 = Color3.fromRGB(80, 220, 120)
+
+    task.delay(1.2, function()
+        if t and t.frame then
+            TweenService:Create(t.frame, TweenInfo.new(0.3),
+                { BackgroundTransparency = 1 }):Play()
+            TweenService:Create(t.label, TweenInfo.new(0.3),
+                { TextTransparency = 1 }):Play()
+        end
     end)
+end
+
+local function doSave()
+    if not HAVE_FILE_IO then return end
+    local ok = saveConfigTo(CONFIG_FILE, CFG)
+    if ok then
+        dirtyFlag = false
+        lastAutoSave = tick()
+        showSaveToast()
+    end
 end
 
 -- ============ TEMA BLANCO NEON ============
@@ -245,6 +319,18 @@ local function notify(title, text, dur)
     end)
 end
 
+local saveScheduled = false
+local function scheduleSave()
+    dirtyFlag = true
+    if not CFG.AutoSaveEnabled then return end
+    if saveScheduled then return end
+    saveScheduled = true
+    task.delay(0.8, function()
+        saveScheduled = false
+        if dirtyFlag then doSave() end
+    end)
+end
+
 -- ============ STATE ============
 local aimOn = false
 local currentTarget = nil
@@ -256,6 +342,42 @@ local sessionStart = tick()
 local sessionKills = 0
 local sessionPickups = 0
 local lastHealthSnapshot = {}
+
+-- ============ HIDE NAME ============
+local originalDisplayName = nil
+
+local function applyHideName()
+    pcall(function()
+        if originalDisplayName == nil then
+            originalDisplayName = LP.DisplayName
+        end
+        if CFG.HideName then
+            LP.DisplayName = CFG.HideNameText or "..."
+        else
+            LP.DisplayName = originalDisplayName
+        end
+    end)
+
+    pcall(function()
+        local pg = LP:FindFirstChild("PlayerGui")
+        if not pg then return end
+        local pl = pg:FindFirstChild("PlayerList")
+        if pl then pl.Enabled = not CFG.HideLeaderboard end
+    end)
+
+    pcall(function()
+        local pg = LP:FindFirstChild("PlayerGui")
+        if not pg then return end
+        local chat = pg:FindFirstChild("Chat")
+        if chat then
+            for _, descendant in ipairs(chat:GetDescendants()) do
+                if descendant:IsA("TextLabel") and descendant.Text == LP.Name then
+                    descendant.Text = CFG.HideName and (CFG.HideNameText or "...") or LP.Name
+                end
+            end
+        end
+    end)
+end
 
 -- ============ FOV CIRCLE ============
 local espScreen = Instance.new("ScreenGui")
@@ -281,7 +403,7 @@ fovStroke.Color = C.accent
 fovStroke.Thickness = 2
 fovStroke.Parent = fovCircle
 
--- ============ DRAWING (PC) ============
+-- ============ DRAWING PC ============
 local drawSnapline, drawHeadDot
 if IS_PC and Drawing then
     pcall(function()
@@ -302,7 +424,7 @@ if IS_PC and Drawing then
     end)
 end
 
--- ============ MOBILE BUTTONS ============
+-- ============ MOBILE AIM BUTTON ============
 if IS_MOBILE then
     aimBtn = Instance.new("TextButton")
     aimBtn.Name = "AimBtn"
@@ -465,7 +587,7 @@ UIS.InputEnded:Connect(function(i, gp)
     if i.UserInputType == CFG.HoldKey or i.KeyCode == CFG.HoldKey then aimOn = false end
 end)
 
--- ============ SILENT AIM (PC) ============
+-- ============ SILENT AIM PC ============
 if IS_PC and CFG.SilentAim then
     local Mouse = LP:GetMouse()
     local mt = nil
@@ -509,7 +631,7 @@ if IS_PC and CFG.SilentAim then
     end
 end
 
--- ============ TRIGGERBOT / AUTO-FIRE ============
+-- ============ TRIGGERBOT ============
 local lastFire = 0
 local function tryFire()
     if not CFG.Enabled or not currentTarget then return end
@@ -753,7 +875,11 @@ local function updatePlayerESP()
         if nameLbl then
             nameLbl.Visible = CFG.PlayerESP and CFG.NameESP
             if nameLbl.Visible then
-                nameLbl.Text = plr.Name
+                local dispName = plr.Name
+                if CFG.HideName and plr == LP then
+                    dispName = CFG.HideNameText or "..."
+                end
+                nameLbl.Text = dispName
                 if CFG.NameColorByHP then
                     local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                     if hpR > 0.6 then nameLbl.TextColor3 = C.hp
@@ -1055,7 +1181,7 @@ wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim v18"
+wmLabel.Text = "BSS-Aim v19"
 wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
@@ -1152,7 +1278,7 @@ end
 
 -- ============ MAIN PANEL ============
 local sg = new("ScreenGui", {
-    Name = "BSS_Aim_V18", ResetOnSpawn = false, IgnoreGuiInset = true,
+    Name = "BSS_Aim_V19", ResetOnSpawn = false, IgnoreGuiInset = true,
     DisplayOrder = 100, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = getParent(),
 })
@@ -1220,7 +1346,7 @@ new("TextLabel", {
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "v18 · tryhard" or "v18 · mobile") .. "  ·  white neon",
+    Text = (IS_PC and "v19 · tryhard" or "v19 · mobile") .. "  ·  auto-save",
     TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
@@ -1236,8 +1362,8 @@ local function iconBtn(txt, xOff)
     neonStroke(b, C.border)
     return b
 end
-local minBtn = iconBtn("—", -76)
-local closeBtn = iconBtn("×", -40)
+local minBtn = iconBtn("-", -76)
+local closeBtn = iconBtn("x", -40)
 
 local tabsFrame = new("Frame", {
     Size = UDim2.new(1, -24, 0, TAB_H), Position = UDim2.new(0, 12, 0, 56),
@@ -1721,6 +1847,9 @@ toggle(hudPage, "Stats (kills, pickups, tiempo)", "HUDStats")
 toggle(hudPage, "FPS", "HUDFPS")
 toggle(hudPage, "Ping", "HUDPing")
 toggle(hudPage, "Playerlist", "HUDPlayerList")
+section(hudPage, "HIDE NAME")
+toggle(hudPage, "Ocultar mi nombre (...)", "HideName")
+toggle(hudPage, "Ocultar leaderboard", "HideLeaderboard")
 section(hudPage, "PANEL")
 slider(hudPage, "Opacidad panel", "PanelOpacity", 0.5, 1, true, function(v)
     panel.BackgroundTransparency = math.clamp(1 - v, 0, 0.5)
@@ -1728,6 +1857,10 @@ end)
 toggle(hudPage, "Notificaciones", "Notifications")
 
 local safePage = pages["SAFE"]
+section(safePage, "AUTO-SAVE")
+toggle(safePage, "Auto-save activado", "AutoSaveEnabled")
+slider(safePage, "Intervalo (seg)", "AutoSaveInterval", 5, 60, false)
+toggle(safePage, "Mostrar toast al guardar", "AutoSaveToast")
 section(safePage, "PROFILES")
 actionBtn(safePage, "Guardar perfil 1", C.accent3, function()
     saveConfigTo(CONFIG_FOLDER .. "/profiles/p1.json", CFG)
@@ -1761,7 +1894,9 @@ keybindRow(safePage, "Toggle aim", "ToggleKey")
 keybindRow(safePage, "Panel", "PanelKey")
 keybindRow(safePage, "Panic (desactiva todo)", "PanicKey")
 section(safePage, "CONFIG")
-actionBtn(safePage, "Guardar config ahora", C.accent3, function() saveConfigTo(CONFIG_FILE, CFG) end)
+actionBtn(safePage, "Guardar config ahora", C.accent3, function()
+    doSave()
+end)
 actionBtn(safePage, "Resetear config", C.danger, function()
     local d = defaultCfg()
     for k, v in pairs(d) do CFG[k] = v end
@@ -1773,7 +1908,7 @@ actionBtn(safePage, "Resetear config", C.danger, function()
     CFG.ToggleKey = resolveKey("RightShift", Enum.KeyCode.RightShift)
     CFG.PanelKey = resolveKey("F1", Enum.KeyCode.F1)
     CFG.PanicKey = resolveKey("Delete", Enum.KeyCode.Delete)
-    saveConfigTo(CONFIG_FILE, CFG)
+    doSave()
     notify("Config", "Reseteada", 3)
 end)
 section(safePage, "PANEL")
@@ -1785,13 +1920,17 @@ actionBtn(safePage, "Limpiar ESP", C.bg3, function()
     for m in pairs(iESP) do clearItemESP(m) end
 end)
 actionBtn(safePage, "Reiniciar script", C.danger, function()
+    pcall(function()
+        if originalDisplayName then LP.DisplayName = originalDisplayName end
+    end)
     espScreen:Destroy(); hudScreen:Destroy()
+    if saveToastRef then saveToastRef.gui:Destroy() end
     if drawSnapline then pcall(function() drawSnapline:Remove() end) end
     if drawHeadDot then pcall(function() drawHeadDot:Remove() end) end
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV18 = false
+    getgenv().BSS_AimV19 = false
 end)
 
 selectTab("AIM")
@@ -1805,7 +1944,7 @@ neonStroke(footer, C.border)
 new("TextLabel", {
     Size = UDim2.new(1, -16, 1, 0), Position = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1, Font = Enum.Font.Gotham,
-    Text = IS_PC and "F1 panel · RMB apunta · panic = DELETE · auto-save ON" or "X = panel · AIM = toggle",
+    Text = IS_PC and "F1 panel · RMB apunta · panic = DELETE" or "X = panel · AIM = toggle",
     TextColor3 = C.muted, TextSize = 9,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = footer,
 })
@@ -1832,7 +1971,6 @@ local function makeDrag(f, h)
 end
 makeDrag(panel, header)
 
--- ============ MINI con imagen ============
 miniBtn = new("TextButton", {
     Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0, 20, 0, 100),
     BackgroundColor3 = Color3.fromRGB(255, 255, 255),
@@ -1935,13 +2073,17 @@ end
 minBtn.MouseButton1Click:Connect(togglePanel)
 
 closeBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        if originalDisplayName then LP.DisplayName = originalDisplayName end
+    end)
     espScreen:Destroy(); hudScreen:Destroy()
+    if saveToastRef then saveToastRef.gui:Destroy() end
     if drawSnapline then pcall(function() drawSnapline:Remove() end) end
     if drawHeadDot then pcall(function() drawHeadDot:Remove() end) end
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV18 = false
+    getgenv().BSS_AimV19 = false
 end)
 
 UIS.InputBegan:Connect(function(i, gp)
@@ -1991,7 +2133,9 @@ local function refreshPlayerList()
         local dStr = hrp and string.format("%dm", math.floor((Camera.CFrame.Position - hrp.Position).Magnitude)) or "—"
         local nl = row:FindFirstChild("Name")
         if nl then
-            nl.Text = string.format("%s  ·  HP %s  ·  %s", plr.Name, hpStr, dStr)
+            local dName = plr.Name
+            if CFG.HideName and plr == LP then dName = CFG.HideNameText or "..." end
+            nl.Text = string.format("%s  ·  HP %s  ·  %s", dName, hpStr, dStr)
             if hum then
                 local r2 = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                 if r2 > 0.6 then nl.TextColor3 = C.hp
@@ -2014,7 +2158,6 @@ RunService.RenderStepped:Connect(function(dt)
         fpsTimer = tick()
     end
 
-    -- TARGET SELECTION con throttle (10 chequeos por seg, no cada frame)
     local now = tick()
     if (aimOn or CFG.TriggerBot or CFG.AutoFire) and (now - lastTargetCheck) > 0.1 then
         lastTargetCheck = now
@@ -2022,36 +2165,26 @@ RunService.RenderStepped:Connect(function(dt)
             local _, bestPart, bestScore = getTargetWithScore()
             if targetDead() then
                 if bestPart then
-                    currentTarget = bestPart
-                    smoothedTargetPos = nil
-                    lastSwitch = now
+                    currentTarget = bestPart; smoothedTargetPos = nil; lastSwitch = now
                 else
-                    currentTarget = nil
-                    smoothedTargetPos = nil
+                    currentTarget = nil; smoothedTargetPos = nil
                 end
             elseif bestPart and bestPart ~= currentTarget then
-                -- hysteresis grande: solo cambia si el nuevo esta MUCHO mas cerca
                 local curPx = targetPx()
                 if bestScore + 100 < curPx and (now - lastSwitch) > 0.8 then
-                    currentTarget = bestPart
-                    smoothedTargetPos = nil
-                    lastSwitch = now
+                    currentTarget = bestPart; smoothedTargetPos = nil; lastSwitch = now
                 end
             end
             if currentTarget and targetPx() > CFG.FOVRadius * 1.4 then
                 if bestPart then
-                    currentTarget = bestPart
-                    smoothedTargetPos = nil
-                    lastSwitch = now
+                    currentTarget = bestPart; smoothedTargetPos = nil; lastSwitch = now
                 else
-                    currentTarget = nil
-                    smoothedTargetPos = nil
+                    currentTarget = nil; smoothedTargetPos = nil
                 end
             end
         end
     elseif not (aimOn or CFG.TriggerBot or CFG.AutoFire) then
-        currentTarget = nil
-        smoothedTargetPos = nil
+        currentTarget = nil; smoothedTargetPos = nil
     end
 
     if IS_MOBILE and aimBtn then
@@ -2091,7 +2224,6 @@ RunService.RenderStepped:Connect(function(dt)
         elseif drawSnapline then drawSnapline.Visible = false end
     end
 
-    -- CAMERA LOCK con smoothed target (mata el temblor)
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
         if not smoothedTargetPos then
             smoothedTargetPos = currentTarget.Position
@@ -2126,7 +2258,7 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV18 do
+    while getgenv().BSS_AimV19 do
         pcall(updatePlayerESP)
         pcall(updateItemESP)
         pcall(tryPickup)
@@ -2136,17 +2268,17 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV18 do
+    while getgenv().BSS_AimV19 do
         pcall(refreshPlayerList)
         task.wait(0.5)
     end
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV18 do
+    while getgenv().BSS_AimV19 do
         watermark.Visible = CFG.HUDWatermark
         if CFG.HUDWatermark then
-            wmLabel.Text = string.format("BSS-Aim v18 · %s", IS_PC and "PC" or "Mobile")
+            wmLabel.Text = string.format("BSS-Aim v19 · %s", IS_PC and "PC" or "Mobile")
         end
         statsHUD.Visible = CFG.HUDStats or CFG.HUDFPS or CFG.HUDPing
         if statsHUD.Visible then
@@ -2167,7 +2299,23 @@ task.spawn(function()
     end
 end)
 
-notify("BSS-Aim v18", (IS_PC and "PC tryhard" or "Mobile") ..
-    " · aim fix + panel fix", 6)
+task.spawn(function()
+    while getgenv().BSS_AimV19 do
+        if CFG.AutoSaveEnabled and dirtyFlag then
+            doSave()
+        end
+        task.wait(CFG.AutoSaveInterval or 10)
+    end
+end)
 
-print("[BSS-Aim v18] cargado — aim sin temblor + panel negro")
+task.spawn(function()
+    while getgenv().BSS_AimV19 do
+        pcall(applyHideName)
+        task.wait(1.5)
+    end
+end)
+
+notify("BSS-Aim v19", (IS_PC and "PC tryhard" or "Mobile") ..
+    " · auto-save + hide name", 6)
+
+print("[BSS-Aim v19] cargado")

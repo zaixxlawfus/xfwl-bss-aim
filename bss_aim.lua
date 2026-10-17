@@ -1,9 +1,26 @@
--- BSS-Aim v20 — car aim + fluid switch + auto-save
+-- BSS-Aim — Universal (Auto-save fix + Aim fluido + Car Aim)
 -- discord.gg/syncrypt
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-if getgenv().BSS_AimV20 then return end
-getgenv().BSS_AimV20 = true
+
+-- Limpieza de instancias viejas si las hay
+pcall(function()
+    if gethui then
+        local h = gethui()
+        for _, v in ipairs(h:GetChildren()) do
+            if v.Name:match("^BSS_") then v:Destroy() end
+        end
+    else
+        local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, v in ipairs(pg:GetChildren()) do
+                if v.Name:match("^BSS_") then v:Destroy() end
+            end
+        end
+    end
+end)
+
+getgenv().BSS_Aim_Loaded = true
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -99,8 +116,8 @@ local DEFAULTS = {
     PanicKey = "Delete",
     FOV = 90,
     FOVRadius = 90,
-    LockSnap = 0.85,
-    CarLockSnap = 0.95,
+    Smoothness = 0.35,
+    CarSmoothness = 0.85,
     CarAim = true,
     MaxDistance = 500,
     TargetPart = "Head",
@@ -201,7 +218,7 @@ CFG.FOVRadius = CFG.FOV
 CFG.PanelOpacity = 1
 getgenv().BSS_AimConfig = CFG
 
--- ============ AUTO-SAVE ============
+-- ============ AUTO-SAVE ENGINE ============
 local dirtyFlag = false
 local lastAutoSave = tick()
 local lastSaveToast = 0
@@ -253,17 +270,14 @@ local function showSaveToast()
     local t = saveToastRef
     t.frame.BackgroundTransparency = 0.15
     t.label.TextTransparency = 0
-    TweenService:Create(t.frame, TweenInfo.new(0.15),
-        { BackgroundTransparency = 0.15 }):Play()
+    TweenService:Create(t.frame, TweenInfo.new(0.15), { BackgroundTransparency = 0.15 }):Play()
     t.label.Text = "Guardado OK"
     t.label.TextColor3 = Color3.fromRGB(80, 220, 120)
 
     task.delay(1.2, function()
         if t and t.frame then
-            TweenService:Create(t.frame, TweenInfo.new(0.3),
-                { BackgroundTransparency = 1 }):Play()
-            TweenService:Create(t.label, TweenInfo.new(0.3),
-                { TextTransparency = 1 }):Play()
+            TweenService:Create(t.frame, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
+            TweenService:Create(t.label, TweenInfo.new(0.3), { TextTransparency = 1 }):Play()
         end
     end)
 end
@@ -277,6 +291,20 @@ local function doSave()
         showSaveToast()
     end
 end
+
+local function scheduleSave()
+    dirtyFlag = true
+    -- El loop de fondo se encarga del guardado real
+end
+
+task.spawn(function()
+    while getgenv().BSS_Aim_Loaded do
+        if CFG.AutoSaveEnabled and dirtyFlag and (tick() - lastAutoSave) >= (CFG.AutoSaveInterval or 10) then
+            doSave()
+        end
+        task.wait(1)
+    end
+end)
 
 -- ============ TEMA ============
 local C = {
@@ -312,21 +340,7 @@ end
 local function notify(title, text, dur)
     if not CFG.Notifications then return end
     pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title, Text = text, Duration = dur or 4,
-        })
-    end)
-end
-
-local saveScheduled = false
-local function scheduleSave()
-    dirtyFlag = true
-    if not CFG.AutoSaveEnabled then return end
-    if saveScheduled then return end
-    saveScheduled = true
-    task.delay(0.8, function()
-        saveScheduled = false
-        if dirtyFlag then doSave() end
+        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = dur or 4 })
     end)
 end
 
@@ -334,18 +348,16 @@ end
 local aimOn = false
 local currentTarget = nil
 local lastSwitch = 0
-local smoothedTargetPos = nil
 local lastTargetCheck = 0
 local aimBtn, miniBtn = nil, nil
 local sessionStart = tick()
 local sessionKills = 0
 local sessionPickups = 0
 local lastHealthSnapshot = {}
-local isInVehicle = false
+local originalCameraType = Camera.CameraType
 
 -- ============ HIDE NAME ============
 local originalDisplayName = nil
-
 local function applyHideName()
     pcall(function()
         if originalDisplayName == nil then originalDisplayName = LP.DisplayName end
@@ -356,19 +368,6 @@ local function applyHideName()
         if pg then
             local pl = pg:FindFirstChild("PlayerList")
             if pl then pl.Enabled = not CFG.HideLeaderboard end
-        end
-    end)
-    pcall(function()
-        local pg = LP:FindFirstChild("PlayerGui")
-        if pg then
-            local chat = pg:FindFirstChild("Chat")
-            if chat then
-                for _, d in ipairs(chat:GetDescendants()) do
-                    if d:IsA("TextLabel") and d.Text == LP.Name then
-                        d.Text = CFG.HideName and (CFG.HideNameText or "...") or LP.Name
-                    end
-                end
-            end
         end
     end)
 end
@@ -440,16 +439,11 @@ if IS_MOBILE then
 
     local function toggleAim()
         aimOn = not aimOn
-        if aimOn then
-            bs1.Color = C.aimOn; aimBtn.TextColor3 = C.aimOn
-        else
-            bs1.Color = C.accent; aimBtn.TextColor3 = C.accent
-        end
+        if aimOn then bs1.Color = C.aimOn; aimBtn.TextColor3 = C.aimOn
+        else bs1.Color = C.accent; aimBtn.TextColor3 = C.accent end
     end
     aimBtn.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
-            toggleAim()
-        end
+        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then toggleAim() end
     end)
     pcall(function() aimBtn.Activated:Connect(toggleAim) end)
 end
@@ -462,10 +456,7 @@ local function refreshFilter()
     if LP.Character then
         table.insert(f, LP.Character)
         local hum = LP.Character:FindFirstChildOfClass("Humanoid")
-        if hum and hum.SeatPart then
-            -- excluir el vehiculo entero
-            table.insert(f, hum.SeatPart.Parent)
-        end
+        if hum and hum.SeatPart then table.insert(f, hum.SeatPart.Parent) end
     end
     rayP.FilterDescendantsInstances = f
 end
@@ -479,7 +470,6 @@ LP.CharacterAdded:Connect(function(char)
         hum:GetPropertyChangedSignal("SeatPart"):Connect(function()
             task.wait(0.1)
             refreshFilter()
-            isInVehicle = hum.SeatPart ~= nil
         end)
     end
 end)
@@ -506,36 +496,6 @@ local function visible(target, char)
     return hit.Instance and hit.Instance:IsDescendantOf(char)
 end
 
-local function predictPos(plr, part, dt)
-    if not IS_PC or CFG.Prediction <= 0 then return part.Position end
-    local char = plr.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return part.Position end
-    local vel = hrp.AssemblyLinearVelocity
-    if vel.Magnitude < 2 then return part.Position end
-    return part.Position + vel * CFG.Prediction
-end
-
-local function scoreTarget(plr, char, part, px, d3)
-    if CFG.IgnoreHighHP then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum and hum.Health >= CFG.IgnoreHPThreshold then return math.huge end
-    end
-    if CFG.Priority == "fov" then return px
-    elseif CFG.Priority == "dist" then return d3
-    elseif CFG.Priority == "weak" then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        return hum and hum.Health or 100
-    elseif CFG.Priority == "danger" then
-        local wep = 0
-        for _, c in ipairs(char:GetChildren()) do
-            if c:IsA("Tool") then wep += 1 end
-        end
-        return d3 - wep * 50
-    end
-    return px
-end
-
 local function getTargetWithScore()
     local bestPlr, bestPart, bestScore = nil, nil, math.huge
     local center = Camera.ViewportSize * 0.5
@@ -552,7 +512,18 @@ local function getTargetWithScore()
         local px = (Vector2.new(sp.X, sp.Y) - center).Magnitude
         if px > CFG.FOVRadius then continue end
         if CFG.WallCheck and not visible(part, char) then continue end
-        local score = scoreTarget(plr, char, part, px, d3)
+        
+        local score = px
+        if CFG.Priority == "dist" then score = d3
+        elseif CFG.Priority == "weak" then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            score = hum and hum.Health or 100
+        elseif CFG.Priority == "danger" then
+            local wep = 0
+            for _, c in ipairs(char:GetChildren()) do if c:IsA("Tool") then wep += 1 end end
+            score = d3 - wep * 50
+        end
+        
         if score < bestScore then
             bestScore = score
             bestPlr = plr
@@ -1155,7 +1126,7 @@ wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim v20"
+wmLabel.Text = "BSS-Aim"
 wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
@@ -1251,7 +1222,7 @@ local function neonStroke(p, color)
 end
 
 local sg = new("ScreenGui", {
-    Name = "BSS_Aim_V20", ResetOnSpawn = false, IgnoreGuiInset = true,
+    Name = "BSS_Aim", ResetOnSpawn = false, IgnoreGuiInset = true,
     DisplayOrder = 100, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = getParent(),
 })
@@ -1317,7 +1288,7 @@ new("TextLabel", {
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "v20 · tryhard" or "v20 · mobile") .. "  ·  car aim",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  fluid aim",
     TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
@@ -1701,8 +1672,8 @@ toggle(aimPage, "Activar", "Enabled")
 toggle(aimPage, "Camera lock", "CameraLock")
 toggle(aimPage, "Solo al disparar", "AimOnFireOnly")
 slider(aimPage, "FOV", "FOV", 30, 400, false, function(v) CFG.FOVRadius = v end)
-slider(aimPage, "Lock snap", "LockSnap", 0.3, 1, true)
-slider(aimPage, "Car Lock snap", "CarLockSnap", 0.5, 1, true)
+slider(aimPage, "Smoothness", "Smoothness", 0.05, 0.8, true)
+slider(aimPage, "Car Smoothness", "CarSmoothness", 0.1, 1, true)
 slider(aimPage, "Dist. max", "MaxDistance", 100, 1500, false)
 partSelector(aimPage)
 prioritySelector(aimPage)
@@ -1837,7 +1808,7 @@ actionBtn(safePage, "Reiniciar script", C.danger, function()
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV20 = false
+    getgenv().BSS_Aim_Loaded = false
 end)
 
 selectTab("AIM")
@@ -1960,7 +1931,7 @@ closeBtn.MouseButton1Click:Connect(function()
     for plr in pairs(pESP) do clearESP(plr) end
     for m in pairs(iESP) do clearItemESP(m) end
     sg:Destroy()
-    getgenv().BSS_AimV20 = false
+    getgenv().BSS_Aim_Loaded = false
 end)
 
 UIS.InputBegan:Connect(function(i, gp)
@@ -2027,22 +1998,22 @@ RunService.RenderStepped:Connect(function(dt)
         if not (CFG.AimOnFireOnly and not aimOn) then
             local _, bestPart, bestScore = getTargetWithScore()
             if targetDead() then
-                if bestPart then currentTarget = bestPart; smoothedTargetPos = nil; lastSwitch = now
-                else currentTarget = nil; smoothedTargetPos = nil end
+                if bestPart then currentTarget = bestPart; lastSwitch = now
+                else currentTarget = nil end
             elseif bestPart and bestPart ~= currentTarget then
                 local curPx = targetPx()
-                -- hysteresis mas baja (40) para cambio fluido
+                -- Cambio fluido: 40px hysteresis, 0.3s cooldown
                 if bestScore + 40 < curPx and (now - lastSwitch) > 0.3 then
-                    currentTarget = bestPart; smoothedTargetPos = nil; lastSwitch = now
+                    currentTarget = bestPart; lastSwitch = now
                 end
             end
             if currentTarget and targetPx() > CFG.FOVRadius * 1.2 then
-                if bestPart then currentTarget = bestPart; smoothedTargetPos = nil; lastSwitch = now
-                else currentTarget = nil; smoothedTargetPos = nil end
+                if bestPart then currentTarget = bestPart; lastSwitch = now
+                else currentTarget = nil end
             end
         end
     elseif not (aimOn or CFG.TriggerBot or CFG.AutoFire) then
-        currentTarget = nil; smoothedTargetPos = nil
+        currentTarget = nil
     end
 
     if IS_MOBILE and aimBtn then
@@ -2080,15 +2051,26 @@ RunService.RenderStepped:Connect(function(dt)
         elseif drawSnapline then drawSnapline.Visible = false end
     end
 
+    -- CAMERA LOCK & CAR LOGIC
+    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+    local inCar = hum and hum.SeatPart ~= nil
+
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        if not smoothedTargetPos then
-            smoothedTargetPos = currentTarget.Position
+        -- Si estamos en carro y CarAim esta activado, forzamos camara Scriptable pa que no pelee
+        if inCar and CFG.CarAim then
+            if Camera.CameraType ~= Enum.CameraType.Scriptable then
+                Camera.CameraType = Enum.CameraType.Scriptable
+            end
         else
-            -- Lerp mas rapido (0.5) para que se sienta mas pegado
-            smoothedTargetPos = smoothedTargetPos:Lerp(currentTarget.Position, 0.5)
+            if Camera.CameraType == Enum.CameraType.Scriptable then
+                Camera.CameraType = originalCameraType
+            end
         end
 
-        local tPos = smoothedTargetPos
+        local camPos = Camera.CFrame.Position
+        local tPos = currentTarget.Position
+        
+        -- Prediccion PC
         if IS_PC and CFG.Prediction > 0 then
             local plr = Players:GetPlayerFromCharacter(currentTarget.Parent)
             if plr then
@@ -2096,29 +2078,26 @@ RunService.RenderStepped:Connect(function(dt)
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if hrp then
                     local vel = hrp.AssemblyLinearVelocity
-                    if vel.Magnitude > 2 then tPos = smoothedTargetPos + vel * CFG.Prediction end
+                    if vel.Magnitude > 2 then tPos = currentTarget.Position + vel * CFG.Prediction end
                 end
             end
         end
 
-        local camPos = Camera.CFrame.Position
         local desired = CFrame.lookAt(camPos, tPos)
-        
-        -- Car Lock: si esta montado usa CarLockSnap para vencer la camara del auto
-        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-        local inCar = hum and hum.SeatPart ~= nil
-        local alpha = inCar and CFG.CarLockSnap or CFG.LockSnap
-        
+        local alpha = inCar and CFG.CarSmoothness or CFG.Smoothness
         Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
     else
-        smoothedTargetPos = nil
+        -- Restaurar camara original si no estamos lockeando
+        if Camera.CameraType == Enum.CameraType.Scriptable then
+            Camera.CameraType = originalCameraType
+        end
     end
 
     pcall(tryFire)
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV20 do
+    while getgenv().BSS_Aim_Loaded do
         pcall(updatePlayerESP)
         pcall(updateItemESP)
         pcall(tryPickup)
@@ -2128,16 +2107,16 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV20 do
+    while getgenv().BSS_Aim_Loaded do
         pcall(refreshPlayerList)
         task.wait(0.5)
     end
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV20 do
+    while getgenv().BSS_Aim_Loaded do
         watermark.Visible = CFG.HUDWatermark
-        if CFG.HUDWatermark then wmLabel.Text = string.format("BSS-Aim v20 · %s", IS_PC and "PC" or "Mobile") end
+        if CFG.HUDWatermark then wmLabel.Text = string.format("BSS-Aim · %s", IS_PC and "PC" or "Mobile") end
         statsHUD.Visible = CFG.HUDStats or CFG.HUDFPS or CFG.HUDPing
         if statsHUD.Visible then
             local minutes = math.floor((tick() - sessionStart) / 60)
@@ -2158,18 +2137,16 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while getgenv().BSS_AimV20 do
-        if CFG.AutoSaveEnabled and dirtyFlag then doSave() end
-        task.wait(CFG.AutoSaveInterval or 10)
-    end
-end)
-
-task.spawn(function()
-    while getgenv().BSS_AimV20 do
+    while getgenv().BSS_Aim_Loaded do
         pcall(applyHideName)
         task.wait(1.5)
     end
 end)
 
-notify("BSS-Aim v20", (IS_PC and "PC tryhard" or "Mobile") .. " · Car Aim + Fluid Switch", 6)
-print("[BSS-Aim v20] cargado")
+-- Guardar al cerrar el juego
+game:BindToClose(function()
+    doSave()
+end)
+
+notify("BSS-Aim", (IS_PC and "PC tryhard" or "Mobile") .. " · Auto-save + Fluid Aim", 6)
+print("[BSS-Aim] cargado")

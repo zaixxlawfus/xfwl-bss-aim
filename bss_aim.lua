@@ -5,24 +5,7 @@
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-pcall(function()
-    if gethui then
-        for _, v in ipairs(gethui():GetChildren()) do
-            if v.Name:match("^BSS_") then v:Destroy() end
-        end
-    else
-        local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            for _, v in ipairs(pg:GetChildren()) do
-                if v.Name:match("^BSS_") then v:Destroy() end
-            end
-        end
-    end
-    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
-end)
-
-getgenv().BSS_Aim_Loaded = true
-
+-- DECLARAMOS LOS SERVICIOS PRIMERO (Aquí estaba el error de 'nil')
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -33,6 +16,24 @@ local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+
+pcall(function()
+    if gethui then
+        for _, v in ipairs(gethui():GetChildren()) do
+            if v.Name:match("^BSS_") then v:Destroy() end
+        end
+    else
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, v in ipairs(pg:GetChildren()) do
+                if v.Name:match("^BSS_") then v:Destroy() end
+            end
+        end
+    end
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+end)
+
+getgenv().BSS_Aim_Loaded = true
 
 local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 local IS_PC = not IS_MOBILE

@@ -1,13 +1,11 @@
--- BSS-Aim — Universal (Auto-save fix + Aim fluido + Car Aim)
+-- BSS-Aim Universal — No Recoil + Aim tryhard fluido
 -- discord.gg/syncrypt
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Limpieza de instancias viejas si las hay
 pcall(function()
     if gethui then
-        local h = gethui()
-        for _, v in ipairs(h:GetChildren()) do
+        for _, v in ipairs(gethui():GetChildren()) do
             if v.Name:match("^BSS_") then v:Destroy() end
         end
     else
@@ -116,9 +114,10 @@ local DEFAULTS = {
     PanicKey = "Delete",
     FOV = 90,
     FOVRadius = 90,
-    Smoothness = 0.35,
+    Smoothness = 0.65,
     CarSmoothness = 0.85,
     CarAim = true,
+    NoRecoil = true,
     MaxDistance = 500,
     TargetPart = "Head",
     TeamCheck = false,
@@ -294,7 +293,6 @@ end
 
 local function scheduleSave()
     dirtyFlag = true
-    -- El loop de fondo se encarga del guardado real
 end
 
 task.spawn(function()
@@ -355,6 +353,10 @@ local sessionKills = 0
 local sessionPickups = 0
 local lastHealthSnapshot = {}
 local originalCameraType = Camera.CameraType
+
+-- NO RECOIL STATE
+local isFiring = false
+local savedShotRotation = nil
 
 -- ============ HIDE NAME ============
 local originalDisplayName = nil
@@ -448,7 +450,7 @@ if IS_MOBILE then
     pcall(function() aimBtn.Activated:Connect(toggleAim) end)
 end
 
--- ============ AIM ============
+-- ============ AIM CORE ============
 local rayP = RaycastParams.new()
 rayP.FilterType = Enum.RaycastFilterType.Exclude
 local function refreshFilter()
@@ -551,8 +553,11 @@ local function targetPx()
     return (Vector2.new(sp.X, sp.Y) - center).Magnitude
 end
 
+-- ============ INPUT & NO RECOIL ============
 UIS.InputBegan:Connect(function(i, gp)
     if gp then return end
+    
+    -- Keybinds
     if i.UserInputType == CFG.HoldKey or i.KeyCode == CFG.HoldKey then aimOn = true end
     if i.KeyCode == CFG.ToggleKey then aimOn = not aimOn end
     if i.KeyCode == CFG.PanicKey then
@@ -562,10 +567,25 @@ UIS.InputBegan:Connect(function(i, gp)
         if drawHeadDot then drawHeadDot.Visible = false end
         notify("PANIC", "Todo desactivado", 3)
     end
+
+    -- No Recoil: guardar rotacion antes de disparar
+    if CFG.NoRecoil and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.KeyCode == Enum.KeyCode.ButtonR2) then
+        isFiring = true
+        if Camera.CameraType ~= Enum.CameraType.Scriptable then
+            savedShotRotation = Camera.CFrame.Rotation
+        end
+    end
 end)
+
 UIS.InputEnded:Connect(function(i, gp)
     if gp then return end
     if i.UserInputType == CFG.HoldKey or i.KeyCode == CFG.HoldKey then aimOn = false end
+
+    -- No Recoil: soltar gatillo
+    if CFG.NoRecoil and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.KeyCode == Enum.KeyCode.ButtonR2) then
+        isFiring = false
+        savedShotRotation = nil
+    end
 end)
 
 -- ============ SILENT AIM ============
@@ -1288,7 +1308,7 @@ new("TextLabel", {
 new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  fluid aim",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  no recoil",
     TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left, Parent = header,
 })
@@ -1677,8 +1697,9 @@ slider(aimPage, "Car Smoothness", "CarSmoothness", 0.1, 1, true)
 slider(aimPage, "Dist. max", "MaxDistance", 100, 1500, false)
 partSelector(aimPage)
 prioritySelector(aimPage)
-section(aimPage, "VEHICLE")
+section(aimPage, "VEHICLE / RECOIL")
 toggle(aimPage, "Car Aim (disparar en auto)", "CarAim")
+toggle(aimPage, "No Recoil (arma no sube)", "NoRecoil")
 section(aimPage, "TRIGGER / AUTO-FIRE")
 toggle(aimPage, "Trigger bot", "TriggerBot")
 slider(aimPage, "Trigger delay", "TriggerDelay", 0.02, 0.5, true)
@@ -2002,7 +2023,6 @@ RunService.RenderStepped:Connect(function(dt)
                 else currentTarget = nil end
             elseif bestPart and bestPart ~= currentTarget then
                 local curPx = targetPx()
-                -- Cambio fluido: 40px hysteresis, 0.3s cooldown
                 if bestScore + 40 < curPx and (now - lastSwitch) > 0.3 then
                     currentTarget = bestPart; lastSwitch = now
                 end
@@ -2051,12 +2071,11 @@ RunService.RenderStepped:Connect(function(dt)
         elseif drawSnapline then drawSnapline.Visible = false end
     end
 
-    -- CAMERA LOCK & CAR LOGIC
+    -- CAMERA LOCK & NO RECOIL & CAR LOGIC
     local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        -- Si estamos en carro y CarAim esta activado, forzamos camara Scriptable pa que no pelee
         if inCar and CFG.CarAim then
             if Camera.CameraType ~= Enum.CameraType.Scriptable then
                 Camera.CameraType = Enum.CameraType.Scriptable
@@ -2070,7 +2089,6 @@ RunService.RenderStepped:Connect(function(dt)
         local camPos = Camera.CFrame.Position
         local tPos = currentTarget.Position
         
-        -- Prediccion PC
         if IS_PC and CFG.Prediction > 0 then
             local plr = Players:GetPlayerFromCharacter(currentTarget.Parent)
             if plr then
@@ -2087,9 +2105,14 @@ RunService.RenderStepped:Connect(function(dt)
         local alpha = inCar and CFG.CarSmoothness or CFG.Smoothness
         Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
     else
-        -- Restaurar camara original si no estamos lockeando
         if Camera.CameraType == Enum.CameraType.Scriptable then
             Camera.CameraType = originalCameraType
+        end
+        
+        -- NO RECOIL: si no estamos lockeando con aimbot y estamos disparando, forzamos la rotacion
+        if CFG.NoRecoil and isFiring and savedShotRotation then
+            local currentPos = Camera.CFrame.Position
+            Camera.CFrame = CFrame.new(currentPos) * savedShotRotation
         end
     end
 
@@ -2143,10 +2166,9 @@ task.spawn(function()
     end
 end)
 
--- Guardar al cerrar el juego
 game:BindToClose(function()
     doSave()
 end)
 
-notify("BSS-Aim", (IS_PC and "PC tryhard" or "Mobile") .. " · Auto-save + Fluid Aim", 6)
+notify("BSS-Aim", (IS_PC and "PC tryhard" or "Mobile") .. " · No Recoil + Aim tryhard", 6)
 print("[BSS-Aim] cargado")

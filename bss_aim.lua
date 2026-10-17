@@ -1,6 +1,6 @@
 -- ============================================================================
 -- BSS-Aim ULTRA v12.3
--- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP HP.
+-- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP HP + WEAPON ESP
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -37,6 +37,95 @@ local Camera = Workspace.CurrentCamera
 local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 local IS_PC = not IS_MOBILE
 local ICON_SPLASH = "rbxassetid://96190503453096"
+
+-- ============================================================================
+-- WEAPON DATABASE — BlockSpin (Sep 2026, full value list)
+-- Tier: 5=Omega 4=Legendary 3=Epic 2=Rare 1=Uncommon 0=unknown
+-- ============================================================================
+local WEAPON_DB = {
+    -- Omega
+    ["M249"]              = { tier=5, label="M249",         color=Color3.fromRGB(255,50,50)   },
+    ["Anaconda"]          = { tier=5, label="Anaconda",     color=Color3.fromRGB(255,50,50)   },
+    -- Legendary
+    ["RPG"]               = { tier=4, label="RPG",          color=Color3.fromRGB(255,140,0)   },
+    ["M16"]               = { tier=4, label="M16",          color=Color3.fromRGB(255,140,0)   },
+    ["AK47"]              = { tier=4, label="AK47",         color=Color3.fromRGB(255,140,0)   },
+    ["AK-47"]             = { tier=4, label="AK47",         color=Color3.fromRGB(255,140,0)   },
+    ["Remington"]         = { tier=4, label="Remington",    color=Color3.fromRGB(255,140,0)   },
+    ["MP5"]               = { tier=4, label="MP5",          color=Color3.fromRGB(255,140,0)   },
+    ["Crossbow"]          = { tier=4, label="Crossbow",     color=Color3.fromRGB(255,140,0)   },
+    ["Tactical Axe"]      = { tier=4, label="Tac.Axe",      color=Color3.fromRGB(255,140,0)   },
+    ["Tactical Shovel"]   = { tier=4, label="Tac.Shovel",   color=Color3.fromRGB(255,140,0)   },
+    ["Tactical Knife"]    = { tier=4, label="Tac.Knife",    color=Color3.fromRGB(255,140,0)   },
+    ["Firework Launcher"] = { tier=4, label="Firework",     color=Color3.fromRGB(255,140,0)   },
+    -- Epic
+    ["M24"]               = { tier=3, label="M24",          color=Color3.fromRGB(160,80,255)  },
+    ["Draco"]             = { tier=3, label="Draco",        color=Color3.fromRGB(160,80,255)  },
+    ["Skorpion"]          = { tier=3, label="Skorpion",     color=Color3.fromRGB(160,80,255)  },
+    ["Double Barrel"]     = { tier=3, label="Dbl.Barrel",   color=Color3.fromRGB(160,80,255)  },
+    ["Barbed Baseball Bat"]={ tier=3, label="Barbed Bat",   color=Color3.fromRGB(160,80,255)  },
+    ["Sledge Hammer"]     = { tier=3, label="Sledge",       color=Color3.fromRGB(160,80,255)  },
+    ["Combat Axe"]        = { tier=3, label="Cmbt.Axe",     color=Color3.fromRGB(160,80,255)  },
+    ["Machete"]           = { tier=3, label="Machete",      color=Color3.fromRGB(160,80,255)  },
+    ["Shovel"]            = { tier=3, label="Shovel",       color=Color3.fromRGB(160,80,255)  },
+    -- Rare
+    ["Brainrot Slapper"]  = { tier=2, label="Brainrot",     color=Color3.fromRGB(80,220,120)  },
+    ["Hunting Rifle"]     = { tier=2, label="Hunt.Rifle",   color=Color3.fromRGB(80,220,120)  },
+    ["Uzi"]               = { tier=2, label="Uzi",          color=Color3.fromRGB(80,220,120)  },
+    ["Sawnoff"]           = { tier=2, label="Sawnoff",      color=Color3.fromRGB(80,220,120)  },
+    ["P226"]              = { tier=2, label="P226",         color=Color3.fromRGB(80,220,120)  },
+    ["Glock"]             = { tier=2, label="Glock",        color=Color3.fromRGB(80,220,120)  },
+    ["Metal Baseball Bat"]= { tier=2, label="Metal Bat",    color=Color3.fromRGB(80,220,120)  },
+    ["Wrench"]            = { tier=2, label="Wrench",       color=Color3.fromRGB(80,220,120)  },
+    ["Crowbar"]           = { tier=2, label="Crowbar",      color=Color3.fromRGB(80,220,120)  },
+    ["Axe"]               = { tier=2, label="Axe",          color=Color3.fromRGB(80,220,120)  },
+    ["Frying Pan"]        = { tier=2, label="Pan",          color=Color3.fromRGB(80,220,120)  },
+    ["Butcher Knife"]     = { tier=2, label="Butcher",      color=Color3.fromRGB(80,220,120)  },
+    ["Switchblade"]       = { tier=2, label="Switchblade",  color=Color3.fromRGB(80,220,120)  },
+    -- Uncommon
+    ["Baseball Bat"]      = { tier=1, label="Baseball Bat", color=Color3.fromRGB(180,180,180) },
+    ["G3"]                = { tier=1, label="G3",           color=Color3.fromRGB(180,180,180) },
+    ["C9"]                = { tier=1, label="C9",           color=Color3.fromRGB(180,180,180) },
+}
+
+-- resolve a Tool name → DB entry, fuzzy-tolerant
+local function resolveWeapon(toolName)
+    if not toolName then return nil end
+    local entry = WEAPON_DB[toolName]
+    if entry then return entry end
+    -- case-insensitive fallback
+    local low = toolName:lower()
+    for k, v in pairs(WEAPON_DB) do
+        if k:lower() == low then return v end
+    end
+    -- partial match (handles "✪ Sawnoff" prefix star, etc.)
+    for k, v in pairs(WEAPON_DB) do
+        if low:find(k:lower(), 1, true) or k:lower():find(low, 1, true) then return v end
+    end
+    return nil
+end
+
+-- get the highest-tier weapon a player is carrying (scans Backpack + Character)
+local function getEquippedWeapon(plr)
+    local best = nil
+    local bestTier = -1
+    local function scanParent(parent)
+        if not parent then return end
+        for _, tool in ipairs(parent:GetChildren()) do
+            if tool:IsA("Tool") then
+                local entry = resolveWeapon(tool.Name)
+                local tier = entry and entry.tier or 0
+                if tier > bestTier then
+                    bestTier = tier
+                    best = entry or { tier=0, label=tool.Name:sub(1,12), color=Color3.fromRGB(200,200,200) }
+                end
+            end
+        end
+    end
+    scanParent(plr:FindFirstChild("Backpack"))
+    scanParent(plr.Character)
+    return best
+end
 
 -- ============================================================================
 -- CONFIG & SAVE
@@ -134,6 +223,7 @@ local DEFAULTS = {
     ChamsESP = true,
     NameESP = true,
     HealthESP = true,
+    WeaponESP = true,       -- NEW
     ItemESP = true,
     NoRecoil = true,
     HitboxExpander = false,
@@ -206,9 +296,7 @@ local function doSave()
 end
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
-        if CFG.AutoSaveEnabled and dirtyFlag and (tick() - lastAutoSave) >= (CFG.AutoSaveInterval or 10) then
-            doSave()
-        end
+        if CFG.AutoSaveEnabled and dirtyFlag and (tick() - lastAutoSave) >= (CFG.AutoSaveInterval or 10) then doSave() end
         task.wait(1)
     end
 end)
@@ -222,6 +310,16 @@ local C = {
     fg = Color3.fromRGB(245, 245, 250), muted = Color3.fromRGB(140, 140, 155), danger = Color3.fromRGB(255, 70, 90), border = Color3.fromRGB(60, 60, 72),
     hp = Color3.fromRGB(80, 220, 120), stamina = Color3.fromRGB(255, 210, 60), aimOn = Color3.fromRGB(255, 80, 90), aimLock = Color3.fromRGB(255, 255, 255),
 }
+
+local TIER_COLORS = {
+    [5] = Color3.fromRGB(255, 50,  50),   -- Omega    = rojo
+    [4] = Color3.fromRGB(255, 140,  0),   -- Legendary = naranja
+    [3] = Color3.fromRGB(160, 80,  255),  -- Epic     = morado
+    [2] = Color3.fromRGB(80,  220, 120),  -- Rare     = verde
+    [1] = Color3.fromRGB(180, 180, 180),  -- Uncommon = gris
+    [0] = Color3.fromRGB(120, 120, 120),  -- Unknown
+}
+local TIER_LABELS = { [5]="[Ω]", [4]="[L]", [3]="[E]", [2]="[R]", [1]="[U]", [0]="[?]" }
 
 local function getParent()
     if gethui then local ok, r = pcall(gethui); if ok and r then return r end end
@@ -283,7 +381,6 @@ if IS_MOBILE then
     aimBtn.Text = "AIM"; aimBtn.TextColor3 = C.accent; aimBtn.TextSize = 22; aimBtn.Font = Enum.Font.GothamBold; aimBtn.AutoButtonColor = false; aimBtn.Active = true; aimBtn.Selectable = true; aimBtn.ZIndex = 200; aimBtn.Parent = espScreen
     Instance.new("UICorner", aimBtn).CornerRadius = UDim.new(1, 0)
     local bs1 = Instance.new("UIStroke"); bs1.Color = C.accent; bs1.Thickness = 3; bs1.Parent = aimBtn
-
     aimBtn.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
             aimOn = true; bs1.Color = C.aimOn; aimBtn.TextColor3 = C.aimOn
@@ -339,8 +436,7 @@ local function getTargetWithScore()
         if d3 > CFG.MaxDistance then continue end
         local sp, on = Camera:WorldToViewportPoint(wp); if not on then continue end
         local px = (Vector2.new(sp.X, sp.Y) - center).Magnitude; if px > CFG.FOVRadius then continue end
-        local score = px
-        if CFG.Priority == "dist" then score = d3 end
+        local score = (CFG.Priority == "dist") and d3 or px
         table.insert(candidates, {plr = plr, part = part, score = score})
     end
     table.sort(candidates, function(a, b) return a.score < b.score end)
@@ -366,7 +462,7 @@ local function targetPx()
 end
 
 -- ============================================================================
--- INPUT (KEYBINDS)
+-- INPUT
 -- ============================================================================
 UserInputService.InputBegan:Connect(function(i, gp)
     if gp then return end
@@ -377,10 +473,7 @@ UserInputService.InputBegan:Connect(function(i, gp)
             savedShotRotation = Camera.CFrame.Rotation
         end
     end
-    if i.KeyCode == CFG.PanicKey then
-        aimOn = false; CFG.Enabled = false
-        notify("PANIC", "Todo desactivado", 3)
-    end
+    if i.KeyCode == CFG.PanicKey then aimOn = false; CFG.Enabled = false; notify("PANIC", "Todo desactivado", 3) end
 end)
 
 UserInputService.InputEnded:Connect(function(i, gp)
@@ -437,18 +530,8 @@ local function applyHitbox(char)
     if not CFG.HitboxExpander then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local head = char:FindFirstChild("Head")
-    if hrp then
-        hrp.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize)
-        hrp.Transparency = CFG.HitboxTransparency
-        hrp.CanCollide = false
-        hrp.Massless = true
-    end
-    if head then
-        head.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize)
-        head.Transparency = CFG.HitboxTransparency
-        head.CanCollide = false
-        head.Massless = true
-    end
+    if hrp then hrp.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize); hrp.Transparency = CFG.HitboxTransparency; hrp.CanCollide = false; hrp.Massless = true end
+    if head then head.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize); head.Transparency = CFG.HitboxTransparency; head.CanCollide = false; head.Massless = true end
 end
 
 Players.PlayerAdded:Connect(function(plr)
@@ -456,7 +539,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM
+-- ESP SYSTEM — Highlight + Name + HP + WEAPON
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -470,16 +553,20 @@ local _playerCache = {}
 local function updateESP()
     _playerCache = Players:GetPlayers()
     for _, plr in ipairs(_playerCache) do
-        if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then
-            clearESP(plr); continue
-        end
+        if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then clearESP(plr); continue end
         local char = plr.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
         local head = char and char:FindFirstChild("Head")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
         if not (hrp and head and hum) then clearESP(plr); continue end
+
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearESP(plr); continue end
+
+        -- weapon scan (done once per ESP refresh, not per frame)
+        local weapEntry = CFG.WeaponESP and getEquippedWeapon(plr) or nil
+
+        -- 1. Highlight — color por arma si WeaponESP ON, si no color hp
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
@@ -488,48 +575,80 @@ local function updateESP()
                 hl.Adornee = char; hl.Parent = char
                 pESP[plr] = hl
             end
-            local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-            if hpR > 0.6 then pESP[plr].FillColor = C.hp
-            elseif hpR > 0.3 then pESP[plr].FillColor = Color3.fromRGB(240, 200, 80)
-            else pESP[plr].FillColor = C.danger end
-            pESP[plr].OutlineColor = Color3.fromRGB(0,0,0)
+            if CFG.WeaponESP and weapEntry then
+                -- outline = tier color, fill = hp
+                pESP[plr].OutlineColor = weapEntry.color
+                local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                pESP[plr].FillColor = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
+            else
+                local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                pESP[plr].FillColor = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
+                pESP[plr].OutlineColor = Color3.fromRGB(0,0,0)
+            end
         else
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
-        if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP) then
+
+        -- 2. BillboardGui — Name + HP + Weapon
+        if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
             if not tESP[plr] or not tESP[plr].Parent then
                 local bb = Instance.new("BillboardGui")
                 bb.Name = "BSS_TXT"; bb.AlwaysOnTop = true
                 bb.Adornee = head; bb.Parent = head
+
                 local nameLbl = Instance.new("TextLabel")
                 nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
                 nameLbl.Size = UDim2.new(1, 0, 0, 16); nameLbl.Position = UDim2.new(0, 0, 0, 0)
                 nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 14
                 nameLbl.TextColor3 = Color3.new(1,1,1); nameLbl.TextStrokeTransparency = 0
                 nameLbl.Parent = bb
+
                 local hpLbl = Instance.new("TextLabel")
                 hpLbl.Name = "HP"; hpLbl.BackgroundTransparency = 1
                 hpLbl.Size = UDim2.new(1, 0, 0, 14); hpLbl.Position = UDim2.new(0, 0, 0, 16)
                 hpLbl.Font = Enum.Font.GothamBold; hpLbl.TextSize = 12
                 hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0
                 hpLbl.Parent = bb
+
+                -- NEW: weapon label
+                local weapLbl = Instance.new("TextLabel")
+                weapLbl.Name = "Weapon"; weapLbl.BackgroundTransparency = 1
+                weapLbl.Size = UDim2.new(1, 0, 0, 14); weapLbl.Position = UDim2.new(0, 0, 0, 30)
+                weapLbl.Font = Enum.Font.GothamBold; weapLbl.TextSize = 12
+                weapLbl.TextColor3 = Color3.fromRGB(255,200,50); weapLbl.TextStrokeTransparency = 0
+                weapLbl.Parent = bb
+
                 tESP[plr] = bb
             end
+
             local bbg = tESP[plr]
             local scale = math.clamp(dist / CFG.MaxESP, 0, 1)
-            local sizeMultiplier = 1 + (scale * 1.5)
-            bbg.Size = UDim2.fromOffset(150 * sizeMultiplier, 40 * sizeMultiplier)
-            bbg.StudsOffsetWorldSpace = Vector3.new(0, 3 * sizeMultiplier, 0)
+            local sm = 1 + (scale * 1.5)
+            bbg.Size = UDim2.fromOffset(160 * sm, 54 * sm)
+            bbg.StudsOffsetWorldSpace = Vector3.new(0, 3 * sm, 0)
+
             local nameLbl = bbg:FindFirstChild("Name")
             if nameLbl then nameLbl.Visible = CFG.NameESP; nameLbl.Text = plr.Name end
+
             local hpLbl = bbg:FindFirstChild("HP")
             if hpLbl then
                 hpLbl.Visible = CFG.HealthESP
                 hpLbl.Text = string.format("%d HP", math.floor(hum.Health))
                 local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                if hpR > 0.6 then hpLbl.TextColor3 = C.hp
-                elseif hpR > 0.3 then hpLbl.TextColor3 = Color3.fromRGB(240, 200, 80)
-                else hpLbl.TextColor3 = C.danger end
+                hpLbl.TextColor3 = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
+            end
+
+            -- NEW: weapon label update
+            local weapLbl = bbg:FindFirstChild("Weapon")
+            if weapLbl then
+                if CFG.WeaponESP and weapEntry then
+                    weapLbl.Visible = true
+                    local tierTag = TIER_LABELS[weapEntry.tier] or "[?]"
+                    weapLbl.Text = tierTag .. " " .. weapEntry.label
+                    weapLbl.TextColor3 = TIER_COLORS[weapEntry.tier] or Color3.fromRGB(200,200,200)
+                else
+                    weapLbl.Visible = false
+                end
             end
         else
             if tESP[plr] then tESP[plr]:Destroy(); tESP[plr] = nil end
@@ -673,7 +792,7 @@ local function toggle(page, label, key, onChange)
     corner(track, 10); local knob = new("Frame", { Size = UDim2.fromOffset(14, 14), Position = UDim2.new(0, 3, 0.5, -7), BackgroundColor3 = C.fg, BorderSizePixel = 0, Parent = track })
     corner(knob, 7)
     local function render(anim)
-        local on = CFG[key]; local x = on and (38 - 14 - 3) or 3; local col = on and C.accent or C.bg4
+        local on = CFG[key]; local x = on and (38-14-3) or 3; local col = on and C.accent or C.bg4
         if anim then
             TweenService:Create(track, TweenInfo.new(0.18), { BackgroundColor3 = col }):Play()
             TweenService:Create(knob, TweenInfo.new(0.18), { Position = UDim2.new(0, x, 0.5, -7) }):Play()
@@ -695,18 +814,18 @@ local function slider(page, label, key, minV, maxV, isFloat, onChange)
     corner(fill, 3); local knob = new("Frame", { Size = UDim2.fromOffset(12, 12), Position = UDim2.new(0, 0, 0.5, -6), BackgroundColor3 = C.fg, BorderSizePixel = 0, Parent = track })
     corner(knob, 6)
     local function render()
-        local v = CFG[key]; local a = math.clamp((v - minV) / (maxV - minV), 0, 1)
-        fill.Size = UDim2.new(a, 0, 1, 0); knob.Position = UDim2.new(a, -6, 0.5, -6)
-        valLbl.Text = isFloat and string.format("%.2f", v) or tostring(math.floor(v))
+        local v = CFG[key]; local a = math.clamp((v-minV)/(maxV-minV), 0, 1)
+        fill.Size = UDim2.new(a,0,1,0); knob.Position = UDim2.new(a,-6,0.5,-6)
+        valLbl.Text = isFloat and string.format("%.2f",v) or tostring(math.floor(v))
     end
     local dragging = false
     local function setFromX(x)
         local tl = track.AbsolutePosition.X; local tw = track.AbsoluteSize.X; if tw <= 0 then return end
-        local a = math.clamp((x - tl) / tw, 0, 1); local v = minV + (maxV - minV) * a
-        if not isFloat then v = math.floor(v + 0.5) end
+        local a = math.clamp((x-tl)/tw, 0, 1); local v = minV+(maxV-minV)*a
+        if not isFloat then v = math.floor(v+0.5) end
         CFG[key] = v; render(); scheduleSave(); if onChange then onChange(v) end
     end
-    local hit = new("TextButton", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", Active = true, Parent = row })
+    local hit = new("TextButton", { Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "", Active = true, Parent = row })
     hit.InputBegan:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then dragging = true; setFromX(inp.Position.X) end end)
     UserInputService.InputChanged:Connect(function(inp) if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then setFromX(inp.Position.X) end end)
     UserInputService.InputEnded:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
@@ -741,9 +860,7 @@ local function actionBtn(page, label, color, onClick)
 end
 
 -- ============================================================================
--- BODY PART SELECTOR (NEW)
--- Cicla: Head → HumanoidRootPart → UpperTorso → LowerTorso →
---        LeftUpperArm → RightUpperArm → LeftUpperLeg → RightUpperLeg → Head
+-- BODY PART SELECTOR
 -- ============================================================================
 local BODY_PARTS = {
     "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso",
@@ -753,53 +870,17 @@ local BODY_PARTS = {
 local function bodyPartSelector(page)
     local row = new("Frame", { Size = UDim2.new(1, 0, 0, ROW_H), BackgroundColor3 = C.bg2, BorderSizePixel = 0, LayoutOrder = nextOrder(), Parent = page })
     corner(row, 9); neonStroke(row, C.border)
-
-    new("TextLabel", {
-        BackgroundTransparency = 1, Position = UDim2.new(0, 12, 0, 0),
-        Size = UDim2.new(0.45, 0, 1, 0), Font = Enum.Font.GothamMedium,
-        Text = "Parte objetivo", TextColor3 = C.fg, TextSize = FONT_LABEL,
-        TextXAlignment = Enum.TextXAlignment.Left, Parent = row
-    })
-
-    -- prev button
-    local prevBtn = new("TextButton", {
-        Size = UDim2.fromOffset(24, 24), Position = UDim2.new(0.45, 0, 0.5, -12),
-        BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = "<",
-        TextColor3 = C.accent, TextSize = FONT_LABEL, Font = Enum.Font.GothamBold,
-        AutoButtonColor = false, Active = true, Parent = row
-    })
+    new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(0.45, 0, 1, 0), Font = Enum.Font.GothamMedium, Text = "Parte objetivo", TextColor3 = C.fg, TextSize = FONT_LABEL, TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+    local prevBtn = new("TextButton", { Size = UDim2.fromOffset(24, 24), Position = UDim2.new(0.45, 0, 0.5, -12), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = "<", TextColor3 = C.accent, TextSize = FONT_LABEL, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = row })
     corner(prevBtn, 6); neonStroke(prevBtn, C.border)
-
-    -- label showing current part
-    local partLbl = new("TextLabel", {
-        BackgroundTransparency = 1, Position = UDim2.new(0.45, 28, 0, 0),
-        Size = UDim2.new(0, 110, 1, 0), Font = Enum.Font.GothamBold,
-        Text = CFG.TargetPart, TextColor3 = C.accent, TextSize = FONT_SMALL,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        TextTruncate = Enum.TextTruncate.AtEnd, Parent = row
-    })
-
-    -- next button
-    local nextBtn = new("TextButton", {
-        Size = UDim2.fromOffset(24, 24), Position = UDim2.new(1, -36, 0.5, -12),
-        BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = ">",
-        TextColor3 = C.accent, TextSize = FONT_LABEL, Font = Enum.Font.GothamBold,
-        AutoButtonColor = false, Active = true, Parent = row
-    })
+    local partLbl = new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.new(0.45, 28, 0, 0), Size = UDim2.new(0, 110, 1, 0), Font = Enum.Font.GothamBold, Text = CFG.TargetPart, TextColor3 = C.accent, TextSize = FONT_SMALL, TextXAlignment = Enum.TextXAlignment.Center, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row })
+    local nextBtn = new("TextButton", { Size = UDim2.fromOffset(24, 24), Position = UDim2.new(1, -36, 0.5, -12), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = ">", TextColor3 = C.accent, TextSize = FONT_LABEL, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = row })
     corner(nextBtn, 6); neonStroke(nextBtn, C.border)
-
-    local function currentIdx()
-        for i, v in ipairs(BODY_PARTS) do if v == CFG.TargetPart then return i end end
-        return 1
-    end
+    local function currentIdx() for i, v in ipairs(BODY_PARTS) do if v == CFG.TargetPart then return i end end; return 1 end
     local function setIdx(i)
-        i = ((i - 1) % #BODY_PARTS) + 1
-        CFG.TargetPart = BODY_PARTS[i]
-        partLbl.Text = CFG.TargetPart
-        currentTarget = nil  -- reset lock so next frame re-picks with new part
-        scheduleSave()
+        i = ((i-1) % #BODY_PARTS) + 1
+        CFG.TargetPart = BODY_PARTS[i]; partLbl.Text = CFG.TargetPart; currentTarget = nil; scheduleSave()
     end
-
     prevBtn.MouseButton1Click:Connect(function() setIdx(currentIdx() - 1) end)
     nextBtn.MouseButton1Click:Connect(function() setIdx(currentIdx() + 1) end)
 end
@@ -819,7 +900,7 @@ section(aimPage, "FILTROS")
 toggle(aimPage, "Wall check", "WallCheck")
 if IS_PC then toggle(aimPage, "Silent aim", "SilentAim") end
 section(aimPage, "OBJETIVO")
-bodyPartSelector(aimPage)   -- <-- el nuevo row va aquí
+bodyPartSelector(aimPage)
 
 local espPage = pages["ESP"]
 section(espPage, "VISUAL")
@@ -827,6 +908,7 @@ toggle(espPage, "Activar ESP", "PlayerESP")
 toggle(espPage, "Cuerpo iluminado", "ChamsESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
+toggle(espPage, "Arma equipada", "WeaponESP")    -- NEW toggle
 slider(espPage, "Rango ESP", "MaxESP", 50, 1500, false)
 
 local hitboxPage = pages["HITBOX"]
@@ -879,45 +961,43 @@ end)
 selectTab("AIM")
 
 -- ============================================================================
--- DRAG / MINIMIZE / KEYBINDS UI
+-- DRAG / MINIMIZE
 -- ============================================================================
 local function makeDrag(f, h)
     local d, s, p
     h.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then d = true; s = i.Position; p = f.Position end end)
-    UserInputService.InputChanged:Connect(function(i) if d and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local dl = i.Position - s; f.Position = UDim2.new(p.X.Scale, p.X.Offset + dl.X, p.Y.Scale, p.Y.Offset + dl.Y) end end)
+    UserInputService.InputChanged:Connect(function(i) if d and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local dl = i.Position - s; f.Position = UDim2.new(p.X.Scale, p.X.Offset+dl.X, p.Y.Scale, p.Y.Offset+dl.Y) end end)
     UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then d = false end end)
 end
 makeDrag(panel, header)
 
-local miniBtn = new("TextButton", { Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0.5, -28, 0, 20), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, Text = "", AutoButtonColor = false, Active = true, Visible = false, ZIndex = 200, Parent = sg })
-corner(miniBtn, 28); neonStroke(miniBtn, Color3.fromRGB(255, 255, 255))
-local miniIcon = Instance.new("ImageLabel"); miniIcon.AnchorPoint = Vector2.new(0.5, 0.5); miniIcon.Position = UDim2.fromScale(0.5, 0.5)
-miniIcon.Size = UDim2.fromScale(0.72, 0.72); miniIcon.BackgroundTransparency = 1
-miniIcon.Image = ICON_SPLASH; miniIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); miniIcon.ScaleType = Enum.ScaleType.Fit; miniIcon.Parent = miniBtn
+local miniBtn = new("TextButton", { Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0.5, -28, 0, 20), BackgroundColor3 = Color3.fromRGB(255,255,255), BorderSizePixel = 0, Text = "", AutoButtonColor = false, Active = true, Visible = false, ZIndex = 200, Parent = sg })
+corner(miniBtn, 28); neonStroke(miniBtn, Color3.fromRGB(255,255,255))
+local miniIcon = Instance.new("ImageLabel"); miniIcon.AnchorPoint = Vector2.new(0.5,0.5); miniIcon.Position = UDim2.fromScale(0.5,0.5)
+miniIcon.Size = UDim2.fromScale(0.72,0.72); miniIcon.BackgroundTransparency = 1
+miniIcon.Image = ICON_SPLASH; miniIcon.ImageColor3 = Color3.fromRGB(10,10,12); miniIcon.ScaleType = Enum.ScaleType.Fit; miniIcon.Parent = miniBtn
 
 miniBtn.MouseButton1Click:Connect(function()
-    panel.Visible = true; panel.Size = UDim2.fromOffset(1, 1)
-    panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
-    TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W, H) }):Play()
+    panel.Visible = true; panel.Size = UDim2.fromOffset(1,1); panel.Position = UDim2.new(0.5,-W/2,0.5,-H/2)
+    TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W,H) }):Play()
     miniBtn.Visible = false
 end)
 
 local function openPanel()
     if not panel.Visible then
-        miniBtn.Visible = false; panel.Visible = true
-        panel.Size = UDim2.fromOffset(1, 1); panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
-        TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W, H) }):Play()
+        miniBtn.Visible = false; panel.Visible = true; panel.Size = UDim2.fromOffset(1,1); panel.Position = UDim2.new(0.5,-W/2,0.5,-H/2)
+        TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W,H) }):Play()
     end
 end
 
 local function closePanel()
     if panel.Visible then
-        local tw = TweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { Size = UDim2.fromOffset(1, 1) })
+        local tw = TweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { Size = UDim2.fromOffset(1,1) })
         tw:Play()
         tw.Completed:Connect(function()
-            panel.Visible = false; panel.Size = UDim2.fromOffset(W, H)
-            miniBtn.Visible = true; miniBtn.Size = UDim2.fromOffset(1, 1)
-            TweenService:Create(miniBtn, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(56, 56) }):Play()
+            panel.Visible = false; panel.Size = UDim2.fromOffset(W,H)
+            miniBtn.Visible = true; miniBtn.Size = UDim2.fromOffset(1,1)
+            TweenService:Create(miniBtn, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(56,56) }):Play()
         end)
     end
 end
@@ -938,28 +1018,28 @@ UserInputService.InputBegan:Connect(function(i, gp)
 end)
 
 -- ============================================================================
--- HUD OVERLAY
+-- HUD
 -- ============================================================================
 local hudScreen = Instance.new("ScreenGui")
 hudScreen.Name = "BSS_HUD_Ultra"; hudScreen.ResetOnSpawn = false; hudScreen.IgnoreGuiInset = true; hudScreen.DisplayOrder = 95; hudScreen.Parent = getParent()
 
 local watermark = Instance.new("Frame")
-watermark.Size = UDim2.fromOffset(240, 26); watermark.Position = UDim2.new(0, 20, 0, 20)
+watermark.Size = UDim2.fromOffset(240,26); watermark.Position = UDim2.new(0,20,0,20)
 watermark.BackgroundColor3 = C.bg; watermark.BackgroundTransparency = 0.25; watermark.BorderSizePixel = 0; watermark.ZIndex = 150; watermark.Parent = hudScreen
-Instance.new("UICorner", watermark).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", watermark).CornerRadius = UDim.new(0,8)
 local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.Thickness = 1.2; wmStroke.Parent = watermark
 local wmLabel = Instance.new("TextLabel")
-wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
+wmLabel.Size = UDim2.new(1,-16,1,0); wmLabel.Position = UDim2.new(0,10,0,0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
 wmLabel.Text = "BSS-Aim Ultra"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
-statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
+statsHUD.Size = UDim2.fromOffset(180,90); statsHUD.Position = UDim2.new(1,-200,0,60)
 statsHUD.BackgroundColor3 = C.bg; statsHUD.BackgroundTransparency = 0.25; statsHUD.BorderSizePixel = 0; statsHUD.ZIndex = 150; statsHUD.Parent = hudScreen
-Instance.new("UICorner", statsHUD).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", statsHUD).CornerRadius = UDim.new(0,8)
 local stStroke = Instance.new("UIStroke"); stStroke.Color = C.accent2; stStroke.Thickness = 1.2; stStroke.Parent = statsHUD
 local stLabel = Instance.new("TextLabel")
-stLabel.Size = UDim2.new(1, -16, 1, -12); stLabel.Position = UDim2.new(0, 10, 0, 6); stLabel.BackgroundTransparency = 1
+stLabel.Size = UDim2.new(1,-16,1,-12); stLabel.Position = UDim2.new(0,10,0,6); stLabel.BackgroundTransparency = 1
 stLabel.Font = Enum.Font.Code; stLabel.TextSize = 12; stLabel.TextColor3 = C.fg; stLabel.TextXAlignment = Enum.TextXAlignment.Left
 stLabel.TextYAlignment = Enum.TextYAlignment.Top; stLabel.TextWrapped = true; stLabel.Text = ""; stLabel.Parent = statsHUD
 
@@ -969,27 +1049,14 @@ local fpsCount = 0; local fpsTimer = tick(); local currentFPS = 60
 -- BACKGROUND LOOPS
 -- ============================================================================
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        pcall(updateESP)
-        task.wait(CFG.ESPRefresh or 0.1)
-    end
+    while getgenv().BSS_Aim_Loaded do pcall(updateESP); task.wait(CFG.ESPRefresh or 0.1) end
 end)
-
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        pcall(tryPickup)
-        pcall(trackKills)
-        task.wait(0.2)
-    end
+    while getgenv().BSS_Aim_Loaded do pcall(tryPickup); pcall(trackKills); task.wait(0.2) end
 end)
-
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        pcall(applyHideName)
-        task.wait(1.5)
-    end
+    while getgenv().BSS_Aim_Loaded do pcall(applyHideName); task.wait(1.5) end
 end)
-
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         if CFG.HitboxExpander then
@@ -1010,7 +1077,6 @@ pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Value + 1, function(dt)
     fpsCount += 1
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
-
     local now = tick()
 
     if (aimOn or CFG.TriggerBot) and (now - lastTargetCheck) > 0.05 then
@@ -1019,19 +1085,15 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         if targetDead() then
             if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
         elseif bestPart and bestPart ~= currentTarget then
-            if bestScore + 40 < targetPx() and (now - lastSwitch) > 0.3 then
-                currentTarget = bestPart; lastSwitch = now
-            end
+            if bestScore + 40 < targetPx() and (now - lastSwitch) > 0.3 then currentTarget = bestPart; lastSwitch = now end
         end
         if currentTarget and targetPx() > CFG.FOVRadius * 1.2 then
             if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
         end
-    elseif not (aimOn or CFG.TriggerBot) then
-        currentTarget = nil
-    end
+    elseif not (aimOn or CFG.TriggerBot) then currentTarget = nil end
 
     if CFG.DrawFOV and CFG.Enabled and aimOn then
-        fovCircle.Position = UDim2.fromScale(0.5, 0.5); fovCircle.Size = UDim2.fromOffset(CFG.FOVRadius * 2, CFG.FOVRadius * 2)
+        fovCircle.Position = UDim2.fromScale(0.5, 0.5); fovCircle.Size = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
         fovStroke.Color = currentTarget and C.aimLock or C.accent; fovCircle.Visible = true
     else fovCircle.Visible = false end
 
@@ -1062,10 +1124,8 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
             stLabel.Text = string.format("Kills:    %d\nPickups:  %d\nSession:  %dm\nFPS:      %d", sessionKills, sessionPickups, minutes, currentFPS)
             statsHUD.Size = UDim2.fromOffset(180, 76)
         end
-    else
-        statsHUD.Visible = false
-    end
+    else statsHUD.Visible = false end
 end)
 
-notify("BSS-Aim ULTRA v12.3", "Car Fix, Mini Arriba, No Recoil, HP ESP", 6)
+notify("BSS-Aim ULTRA v12.3", "Car Fix, Mini Arriba, No Recoil, HP ESP + Weapon ESP", 6)
 print("[BSS-Aim ULTRA v12.3] cargado")

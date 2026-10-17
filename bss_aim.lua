@@ -1,11 +1,10 @@
 -- ============================================================================
--- BSS-Aim ULTRA v12.3
--- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP HP + WEAPON ICON ESP
+-- BSS-Aim ULTRA v12.4
+-- Car Aim fixed, No Recoil, Anti-Freeze mira, ESP HP + WEAPON ICON ESP
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- DECLARAMOS LOS SERVICIOS PRIMERO (Aquí estaba el error de 'nil')
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -40,7 +39,7 @@ local IS_PC = not IS_MOBILE
 local ICON_SPLASH = "rbxassetid://96190503453096"
 
 -- ============================================================================
--- WEAPON DATABASE — BlockSpin, con TextureId fallback
+-- WEAPON DATABASE
 -- ============================================================================
 local WEAPON_DB = {
     ["M249"]              = { tier=5, label="M249",         color=Color3.fromRGB(255,50,50),   icon="" },
@@ -97,7 +96,8 @@ local function resolveWeapon(toolName)
     return nil
 end
 
--- escanea Backpack + Character, devuelve {entry, textureId} del arma de mayor tier
+-- weapon cache por UserId+toolName — evita O(n²) cada frame
+local weaponCache = {}
 local function getEquippedWeapon(plr)
     local best = nil
     local bestTier = -1
@@ -111,16 +111,26 @@ local function getEquippedWeapon(plr)
                 if tier > bestTier then
                     bestTier = tier
                     best = entry or { tier=0, label=tool.Name:sub(1,12), color=Color3.fromRGB(200,200,200), icon="" }
-                    -- agarra TextureId directamente del Tool — BlockSpin lo setea en el objeto
                     bestTexture = (tool.TextureId and tool.TextureId ~= "") and tool.TextureId or (entry and entry.icon or "")
                 end
             end
         end
     end
+    -- cache hit
+    local char = plr.Character
+    local equipped = char and char:FindFirstChildOfClass("Tool")
+    local toolName = equipped and equipped.Name or "__none__"
+    local cached = weaponCache[plr.UserId]
+    if cached and cached.lastTool == toolName then
+        return cached.entry, cached.texture
+    end
     scanParent(plr:FindFirstChild("Backpack"))
-    scanParent(plr.Character)
+    scanParent(char)
+    weaponCache[plr.UserId] = { entry=best, texture=bestTexture, lastTool=toolName }
     return best, bestTexture
 end
+
+Players.PlayerRemoving:Connect(function(plr) weaponCache[plr.UserId] = nil end)
 
 -- ============================================================================
 -- CONFIG & SAVE
@@ -128,7 +138,7 @@ end
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 13
+local CONFIG_VERSION = 14
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -340,6 +350,28 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
+-- ANTI-FREEZE: guard de CameraType para evitar flip-flop entre frames
+-- ============================================================================
+-- Bug original: CameraType cambiaba a Scriptable y en el MISMO frame se
+-- intentaba asignar CFrame — el motor lo ignoraba silenciosamente y en
+-- frames posteriores el flip-flop Scriptable↔Custom acumulaba un deadlock
+-- visual que congelaba la mira después de ~30 segundos.
+-- Fix: usamos _camTypeApplied para saber si el tipo ya fue aplicado en un
+-- frame anterior. Si acabamos de cambiarlo → skip el CFrame este frame.
+local _camTypeApplied = false
+local _lastCamType = Camera.CameraType
+
+local function setCamType(t)
+    if Camera.CameraType ~= t then
+        Camera.CameraType = t
+        _camTypeApplied = false   -- recién cambiado, necesita un frame de gracia
+        _lastCamType = t
+    else
+        _camTypeApplied = true    -- ya era el tipo correcto, CFrame es writable
+    end
+end
+
+-- ============================================================================
 -- HIDE NAME
 -- ============================================================================
 local originalDisplayName = nil
@@ -404,6 +436,8 @@ end
 refreshFilter()
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.4); refreshFilter()
+    -- limpia cache de armas al respawn
+    weaponCache = {}
     local hum = char:WaitForChild("Humanoid", 3)
     if hum then hum:GetPropertyChangedSignal("SeatPart"):Connect(function() task.wait(0.1); refreshFilter() end) end
 end)
@@ -464,6 +498,7 @@ UserInputService.InputBegan:Connect(function(i, gp)
     if i.KeyCode == CFG.HoldKey or i.UserInputType == CFG.HoldKey then aimOn = true end
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.KeyCode == Enum.KeyCode.ButtonR2 then
         isFiring = true
+        -- guardamos la rotación ANTES de que el aim la modifique este frame
         if CFG.NoRecoil and Camera.CameraType ~= Enum.CameraType.Scriptable then
             savedShotRotation = Camera.CFrame.Rotation
         end
@@ -534,7 +569,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM — Highlight + Name + HP + WEAPON ICON
+-- ESP SYSTEM
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -563,7 +598,7 @@ local function updateESP()
             weapEntry, weapTexture = getEquippedWeapon(plr)
         end
 
-        -- 1. Highlight
+        -- Highlight
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
@@ -579,7 +614,7 @@ local function updateESP()
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
-        -- 2. BillboardGui — Name + HP + Weapon Icon
+        -- BillboardGui
         if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
             if not tESP[plr] or not tESP[plr].Parent then
                 local bb = Instance.new("BillboardGui")
@@ -600,7 +635,6 @@ local function updateESP()
                 hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0
                 hpLbl.Parent = bb
 
-                -- weapon row: icono a la izquierda + nombre a la derecha
                 local weapFrame = Instance.new("Frame")
                 weapFrame.Name = "WeapFrame"; weapFrame.BackgroundTransparency = 1
                 weapFrame.Size = UDim2.new(1, 0, 0, 28); weapFrame.Position = UDim2.new(0, 0, 0, 30)
@@ -751,7 +785,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.3", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.4", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1046,7 +1080,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1,-16,1,0); wmLabel.Position = UDim2.new(0,10,0,0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v12.4"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180,90); statsHUD.Position = UDim2.new(1,-200,0,60)
@@ -1084,7 +1118,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- MAIN LOOP
+-- MAIN LOOP — camera lock con anti-freeze
 -- ============================================================================
 local _lastKills = -1; local _lastPickups = -1; local _lastMinutes = -1; local _lastFPS = -1
 
@@ -1115,19 +1149,33 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
+    -- ── CAMERA LOCK con frame-grace anti-freeze ──────────────────────────────
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
         if inCar then
-            if Camera.CameraType ~= Enum.CameraType.Scriptable then Camera.CameraType = Enum.CameraType.Scriptable end
+            -- necesita Scriptable para mover la cam en vehículo
+            setCamType(Enum.CameraType.Scriptable)
         else
-            if Camera.CameraType == Enum.CameraType.Scriptable then Camera.CameraType = Enum.CameraType.Custom end
+            -- fuera de carro: Custom es el tipo correcto
+            setCamType(Enum.CameraType.Custom)
         end
-        Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
+        -- solo asignamos CFrame si el tipo ya estaba aplicado desde el frame anterior
+        if _camTypeApplied then
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
+        end
+        -- si _camTypeApplied == false, este frame solo cambió el tipo
+        -- el próximo frame _camTypeApplied será true y el lookAt va solo
     else
-        if Camera.CameraType == Enum.CameraType.Scriptable then Camera.CameraType = Enum.CameraType.Custom end
+        -- aim off → devolvemos a Custom si estaba en Scriptable
+        setCamType(Enum.CameraType.Custom)
+        -- NoRecoil solo cuando no estamos en camera lock activo
         if CFG.NoRecoil and isFiring and savedShotRotation then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedShotRotation
+            if _camTypeApplied then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedShotRotation
+            end
         end
     end
+    -- marca el tipo como aplicado para el frame siguiente
+    _camTypeApplied = true
 
     watermark.Visible = CFG.HUDWatermark
 
@@ -1142,5 +1190,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     else statsHUD.Visible = false end
 end)
 
-notify("BSS-Aim ULTRA v12.3", "Car Fix, Mini Arriba, No Recoil, Weapon Icon ESP", 6)
-print("[BSS-Aim ULTRA v12.3] cargado")
+notify("BSS-Aim ULTRA v12.4", "Anti-Freeze mira fix, Car Aim, WeaponCache", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — anti-freeze activo")

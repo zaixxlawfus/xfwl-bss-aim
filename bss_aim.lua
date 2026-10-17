@@ -1,6 +1,5 @@
--- BSS-Aim v9.1 — Fix Total (RootPart Aim + dt-compensated + ESP visible)
+-- BSS-Aim v10 — PRO (ESP fluido, Weapon Cache, Aim dt-compensado)
 -- discord.gg/syncrypt
--- FIXES: aimbot dt-compensado, getAimPosition usa Part real, ESP box siempre visible
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
@@ -40,7 +39,7 @@ local ICON_SPLASH = "rbxassetid://96190503453096"
 local CONFIG_FOLDER  = "BSS_Aim"
 local CONFIG_FILE    = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO   = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 9
+local CONFIG_VERSION = 10
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -120,7 +119,7 @@ local DEFAULTS = {
     PlayerESP = true, WeaponIconESP = true, ItemESP = true, NameESP = true, HealthESP = true,
     ChamsESP = false, HeadDotESP = false, SnaplineESP = false, ArmedOnlyESP = false,
     NameColorByHP = true, DistanceStuds = false, Prediction = 0.08,
-    MaxESP = 500, ESPMinScale = 0.45, ESPMaxScale = 1.0, ESPRefresh = 0.05,
+    MaxESP = 500, ESPMinScale = 0.45, ESPMaxScale = 1.0, ESPRefresh = 0.0, -- 0 = RenderStepped (Max FPS)
     ESPColor = {1, 1, 1}, ItemOutline = true,
     AutoPickup = true, PickupRadius = 50, PickupDelay = 0.1,
     PickupMoney = true, PickupWeapons = true, PickupFood = true, PickupTools = true,
@@ -225,7 +224,6 @@ local lastHealthSnapshot = {}
 local originalCameraType = Camera.CameraType
 local isFiring           = false
 local savedShotRotation  = nil
-local lastCameraPos      = Camera.CFrame.Position
 
 -- ============ HIDE NAME ============
 local originalDisplayName = nil
@@ -281,7 +279,7 @@ if IS_MOBILE then
     pcall(function() aimBtn.Activated:Connect(toggleAim) end)
 end
 
--- ============ AIM CORE — FIX v9.1 ============
+-- ============ AIM CORE ============
 local rayP = RaycastParams.new(); rayP.FilterType = Enum.RaycastFilterType.Exclude
 local function refreshFilter()
     local f = {Camera}
@@ -321,15 +319,11 @@ local function visible(targetPos, char)
     return hit.Instance and hit.Instance:IsDescendantOf(char)
 end
 
--- FIX 1: getAimPosition usa la Part real, no offset fijo
--- La cabeza real sigue saltos/agachado correctamente
 local function getAimPosition(plr)
     local char = plr.Character
     if not char then return nil end
 
-    -- Busca la parte exacta pedida por el usuario
     local part = char:FindFirstChild(CFG.TargetPart)
-    -- Fallbacks en orden de precisión
     if not part then part = char:FindFirstChild("Head") end
     if not part then part = char:FindFirstChild("UpperTorso") end
     if not part then part = char:FindFirstChild("HumanoidRootPart") end
@@ -337,12 +331,10 @@ local function getAimPosition(plr)
 
     local basePos = part.Position
 
-    -- FIX 2: Predicción usa velocidad real del HRP (AssemblyLinearVelocity)
     if CFG.Prediction and CFG.Prediction > 0 then
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then
             local vel = hrp.AssemblyLinearVelocity
-            -- Solo predice en XZ, no en Y (evita predecir saltos erráticos)
             local flatVel = Vector3.new(vel.X, vel.Y * 0.3, vel.Z)
             basePos = basePos + flatVel * CFG.Prediction
         end
@@ -479,18 +471,40 @@ if IS_PC and CFG.SilentAim then
     end
 end
 
--- ============ HELPERS ============
-local function getEquippedTool(plr)
-    local c = plr.Character; if not c then return nil end
-    for _, x in ipairs(c:GetChildren()) do if x:IsA("Tool") then return x end end
-    return nil
-end
-local function getToolIcon(tool)
+-- ============ HELPERS (WEAPON CACHE) ============
+local WeaponIconCache = {}
+local function getWeaponIcon(plr)
+    local tool = nil
+    local char = plr.Character
+    if not char then return nil end
+    for _, x in ipairs(char:GetChildren()) do if x:IsA("Tool") then tool = x; break end end
     if not tool then return nil end
-    local ok, tex = pcall(function() return tool.TextureId end)
-    if ok and tex and type(tex) == "string" and tex ~= "" then return tex end
-    return nil
+    
+    -- Retorna de la caché si ya lo buscamos
+    if WeaponIconCache[tool] then return WeaponIconCache[tool] end
+    
+    local tex = nil
+    -- Intenta TextureId
+    local ok, t = pcall(function() return tool.TextureId end)
+    if ok and t and type(t) == "string" and t ~= "" then tex = t end
+    
+    -- Intenta Handle Texture
+    if not tex then
+        local handle = tool:FindFirstChild("Handle")
+        if handle then
+            if handle.Texture and handle.Texture ~= "" then tex = handle.Texture end
+            if not tex then
+                local decal = handle:FindFirstChildOfClass("Decal")
+                if decal and decal.Texture ~= "" then tex = decal.Texture end
+            end
+        end
+    end
+    
+    -- Guarda en caché (incluso si es nil pa' no buscar de nuevo)
+    WeaponIconCache[tool] = tex
+    return tex
 end
+
 local function hasWeapon(plr)
     local c = plr.Character
     if c then for _, x in ipairs(c:GetChildren()) do if x:IsA("Tool") then return true end end end
@@ -516,7 +530,7 @@ local function clearChams(plr)
     if h then pcall(function() h:Destroy() end); chamsTable[plr] = nil end
 end
 
--- ============ ESP 2D — FIX v9.1 ============
+-- ============ ESP 2D PRO (Optimizado) ============
 local pESP  = {}
 local iESP  = {}
 local espGui = Instance.new("ScreenGui")
@@ -532,8 +546,7 @@ local function createPlayerESP()
     box.Name = "Box"; box.BackgroundTransparency = 1; box.BorderSizePixel = 0
     box.Size = UDim2.fromScale(1,1); box.Parent = container
     local boxStroke = Instance.new("UIStroke")
-    -- FIX: grosor inicial 2 para que sea visible desde spawn
-    boxStroke.Color = Color3.fromRGB(255,255,255); boxStroke.Thickness = 2; boxStroke.Parent = box
+    boxStroke.Color = Color3.fromRGB(255,255,255); boxStroke.Thickness = 1.5; boxStroke.Parent = box
 
     local nameLbl = Instance.new("TextLabel")
     nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
@@ -564,6 +577,11 @@ local function createPlayerESP()
     hpFill.BorderSizePixel = 0; hpFill.AnchorPoint = Vector2.new(0,1)
     hpFill.Position = UDim2.new(0,0,1,0); hpFill.Size = UDim2.new(1,0,1,0); hpFill.Parent = hpBg
 
+    -- Cache references for ultra fast access
+    container.Cache = {
+        box = box, stroke = boxStroke, name = nameLbl, wep = wepIcon, dist = distLbl,
+        hpBg = hpBg, hpFill = hpFill
+    }
     return container
 end
 
@@ -578,6 +596,7 @@ local function createItemESP()
     lbl.TextSize = 11; lbl.TextColor3 = CFG.ESPColor; lbl.Parent = container
     Instance.new("UICorner", lbl).CornerRadius = UDim.new(0,4)
     local st = Instance.new("UIStroke"); st.Color = Color3.fromRGB(0,0,0); st.Thickness = 2; st.Parent = lbl
+    container.Cache = { label = lbl, stroke = st }
     return container
 end
 
@@ -607,11 +626,15 @@ local function classifyItem(name)
     return Color3.fromRGB(255,200,90), "[I]"
 end
 
--- FIX 3: drawESP — box siempre positiva, stroke escalado por distancia
+-- Ultra Optimized ESP Drawer
 local function drawESP()
+    local camPos = Camera.CFrame.Position
+    local center = Camera.ViewportSize * 0.5
+
     for _, plr in ipairs(Players:GetPlayers()) do
+        local t = pESP[plr]
         if plr == LP or sameTeam(plr) or not alive(plr) then
-            if pESP[plr] then pESP[plr].Visible = false end
+            if t then t.Visible = false end
             continue
         end
 
@@ -621,22 +644,22 @@ local function drawESP()
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
 
         if not (head and hrp and hum) then
-            if pESP[plr] then pESP[plr].Visible = false end
+            if t then t.Visible = false end
             continue
         end
 
-        local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+        local dist = (camPos - hrp.Position).Magnitude
         if dist > CFG.MaxESP then
-            if pESP[plr] then pESP[plr].Visible = false end
+            if t then t.Visible = false end
             continue
         end
 
         if CFG.ArmedOnlyESP and not hasWeapon(plr) then
-            if pESP[plr] then pESP[plr].Visible = false end
+            if t then t.Visible = false end
             continue
         end
 
-        -- FIX: posiciones de referencia estables (head top y hrp bottom)
+        -- Project 2D Box
         local topPos    = head.Position + Vector3.new(0, 0.6, 0)
         local bottomPos = hrp.Position  - Vector3.new(0, 2.8, 0)
 
@@ -644,41 +667,27 @@ local function drawESP()
         local bottomScreen, on2 = Camera:WorldToViewportPoint(bottomPos)
 
         if not on1 or not on2 then
-            if pESP[plr] then pESP[plr].Visible = false end
+            if t then t.Visible = false end
             continue
         end
 
-        -- FIX: height siempre positiva (Y de pantalla: pequeño = arriba)
         local rawH   = bottomScreen.Y - topScreen.Y
         local height = math.max(math.abs(rawH), 12)
         local width  = math.max(height * 0.45, 18)
         local x      = topScreen.X - (width * 0.5)
-        -- FIX: y siempre el punto más alto en pantalla
         local y      = math.min(topScreen.Y, bottomScreen.Y)
 
-        if not pESP[plr] then pESP[plr] = createPlayerESP() end
-        local t = pESP[plr]
-        t.Visible  = true
-        t.Position = UDim2.fromOffset(x, y)
-        t.Size     = UDim2.fromOffset(width, height)
-
-        -- FIX: stroke escala con distancia → visible de lejos y de cerca
-        local distRatio = math.clamp(1 - (dist / CFG.MaxESP), 0, 1)
-        local espScale  = CFG.ESPMinScale + (CFG.ESPMaxScale - CFG.ESPMinScale) * distRatio
-        local box = t:FindFirstChild("Box")
-        if box then
-            local stroke = box:FindFirstChildOfClass("UIStroke")
-            if stroke then
-                stroke.Thickness = math.clamp(espScale * 2.4, 1.2, 3.5)
-                -- color del box según HP si está activado
-                if CFG.NameColorByHP then
-                    local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                    if hpR > 0.6 then stroke.Color = CFG.ESPColor
-                    elseif hpR > 0.3 then stroke.Color = Color3.fromRGB(240,200,80)
-                    else stroke.Color = C.danger end
-                else stroke.Color = CFG.ESPColor end
-            end
+        if not t then
+            t = createPlayerESP()
+            pESP[plr] = t
         end
+        t.Visible  = true
+        
+        -- Snappy math rounding for sub-pixel performance
+        t.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
+        t.Size     = UDim2.fromOffset(math.floor(width), math.floor(height))
+
+        local cache = t.Cache
 
         -- Chams
         if CFG.ChamsESP then
@@ -686,59 +695,49 @@ local function drawESP()
             if ch then ch.Enabled = true; ch.FillColor = CFG.ESPColor end
         else clearChams(plr) end
 
-        -- Nombre
-        local nameLbl = t:FindFirstChild("Name")
-        if nameLbl then
-            nameLbl.Visible = CFG.PlayerESP and CFG.NameESP
-            if nameLbl.Visible then
-                local dispName = plr.Name
-                if nameLbl.Text ~= dispName then nameLbl.Text = dispName end
-                if CFG.NameColorByHP then
-                    local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                    if hpR > 0.6 then nameLbl.TextColor3 = C.hp
-                    elseif hpR > 0.3 then nameLbl.TextColor3 = Color3.fromRGB(240,200,80)
-                    else nameLbl.TextColor3 = C.danger end
-                else nameLbl.TextColor3 = Color3.fromRGB(255,255,255) end
-            end
+        -- Box Color
+        local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+        if CFG.NameColorByHP then
+            if hpR > 0.6 then cache.stroke.Color = CFG.ESPColor
+            elseif hpR > 0.3 then cache.stroke.Color = Color3.fromRGB(240,200,80)
+            else cache.stroke.Color = C.danger end
+        else cache.stroke.Color = CFG.ESPColor end
+
+        -- Name
+        cache.name.Visible = CFG.PlayerESP and CFG.NameESP
+        if cache.name.Visible then
+            if cache.name.Text ~= plr.Name then cache.name.Text = plr.Name end
+            if CFG.NameColorByHP then
+                if hpR > 0.6 then cache.name.TextColor3 = C.hp
+                elseif hpR > 0.3 then cache.name.TextColor3 = Color3.fromRGB(240,200,80)
+                else cache.name.TextColor3 = C.danger end
+            else cache.name.TextColor3 = Color3.fromRGB(255,255,255) end
         end
 
-        -- Ícono arma
-        local wepIcon = t:FindFirstChild("WepIcon")
-        if wepIcon then
-            if CFG.PlayerESP and CFG.WeaponIconESP then
-                local tool = getEquippedTool(plr); local tex = getToolIcon(tool)
-                if tex then
-                    if wepIcon.Image ~= tex then wepIcon.Image = tex end
-                    wepIcon.Visible = true
-                else wepIcon.Visible = false end
-            else wepIcon.Visible = false end
-        end
+        -- Weapon Icon
+        if CFG.PlayerESP and CFG.WeaponIconESP then
+            local tex = getWeaponIcon(plr)
+            if tex then
+                if cache.wep.Image ~= tex then cache.wep.Image = tex end
+                cache.wep.Visible = true
+            else cache.wep.Visible = false end
+        else cache.wep.Visible = false end
 
-        -- Distancia
-        local distLbl = t:FindFirstChild("Dist")
-        if distLbl then
-            local dt2 = CFG.DistanceStuds
-                and string.format("%d studs", math.floor(dist * 3.28))
-                or string.format("%dm", math.floor(dist))
-            if distLbl.Text ~= dt2 then distLbl.Text = dt2 end
-        end
+        -- Distance
+        local dt2 = CFG.DistanceStuds and string.format("%d studs", math.floor(dist * 3.28)) or string.format("%dm", math.floor(dist))
+        if cache.dist.Text ~= dt2 then cache.dist.Text = dt2 end
 
-        -- HP bar
-        local hpBg   = t:FindFirstChild("HpBg")
-        local hpFill = hpBg and hpBg:FindFirstChild("HpFill")
-        if hpBg and hpFill then
-            if CFG.PlayerESP and CFG.HealthESP then
-                local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                hpFill.Size = UDim2.new(1, 0, hp, 0)
-                if hp > 0.6 then hpFill.BackgroundColor3 = C.hp
-                elseif hp > 0.3 then hpFill.BackgroundColor3 = Color3.fromRGB(240,200,80)
-                else hpFill.BackgroundColor3 = C.danger end
-                hpBg.Visible = true
-            else hpBg.Visible = false end
-        end
+        -- HP Bar
+        if CFG.PlayerESP and CFG.HealthESP then
+            cache.hpFill.Size = UDim2.new(1, 0, hpR, 0)
+            if hpR > 0.6 then cache.hpFill.BackgroundColor3 = C.hp
+            elseif hpR > 0.3 then cache.hpFill.BackgroundColor3 = Color3.fromRGB(240,200,80)
+            else cache.hpFill.BackgroundColor3 = C.danger end
+            cache.hpBg.Visible = true
+        else cache.hpBg.Visible = false end
     end
 
-    -- Items ESP (sin cambios, era correcto)
+    -- Items ESP
     if CFG.ItemESP then
         local folder = WS:FindFirstChild("DroppedItems")
         if folder then
@@ -752,36 +751,35 @@ local function drawESP()
                 end
                 if not part then continue end
 
-                local dist = (Camera.CFrame.Position - part.Position).Magnitude
+                local dist = (camPos - part.Position).Magnitude
+                local t = iESP[m]
                 if dist > CFG.MaxESP then
-                    if iESP[m] then iESP[m].Visible = false end; continue
+                    if t then t.Visible = false end; continue
                 end
 
                 local sp, on = Camera:WorldToViewportPoint(part.Position)
                 if not on then
-                    if iESP[m] then iESP[m].Visible = false end; continue
+                    if t then t.Visible = false end; continue
                 end
+
+                if not t then
+                    t = createItemESP()
+                    iESP[m] = t
+                end
+                t.Visible = true
+                t.Position = UDim2.fromOffset(math.floor(sp.X), math.floor(sp.Y))
 
                 local amount = readItemAmount(m)
                 local color, icon = classifyItem(m.Name)
                 local label = m.Name
                 if amount and amount ~= "" then label = m.Name .. " " .. amount end
-
-                if not iESP[m] then iESP[m] = createItemESP() end
-                local t = iESP[m]; t.Visible = true
-                t.Position = UDim2.fromOffset(sp.X, sp.Y)
-
-                local lbl = t:FindFirstChild("Label")
-                if lbl then
-                    local txt = string.format("%s %s [%dm]", icon, label, math.floor(dist))
-                    if lbl.Text ~= txt then
-                        lbl.Text = txt; lbl.TextColor3 = color
-                        local st = lbl:FindFirstChildOfClass("UIStroke")
-                        if st then
-                            if CFG.ItemOutline then st.Color = Color3.fromRGB(0,0,0); st.Thickness = 2
-                            else st.Color = color; st.Thickness = 1 end
-                        end
-                    end
+                local txt = string.format("%s %s [%dm]", icon, label, math.floor(dist))
+                
+                local cache = t.Cache
+                if cache.label.Text ~= txt then
+                    cache.label.Text = txt; cache.label.TextColor3 = color
+                    if CFG.ItemOutline then cache.stroke.Color = Color3.fromRGB(0,0,0); cache.stroke.Thickness = 2
+                    else cache.stroke.Color = color; cache.stroke.Thickness = 1 end
                 end
             end
         end
@@ -878,7 +876,7 @@ local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1,-16,1,0); wmLabel.Position = UDim2.new(0,10,0,0)
 wmLabel.BackgroundTransparency = 1; wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim v9.1"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim PRO"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Name = "Stats"; statsHUD.Size = UDim2.fromOffset(180,90)
@@ -936,8 +934,8 @@ logoIcon.Size = UDim2.fromScale(0.72,0.72); logoIcon.BackgroundTransparency = 1
 logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10,10,12)
 logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
-new("TextLabel", { Size = UDim2.new(0,220,0,16), Position = UDim2.new(0,52,0,5), BackgroundTransparency = 1, Text = "BSS-AIM v9.1", TextColor3 = Color3.fromRGB(255,255,255), TextSize = FONT_TITLE, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0,220,0,12), Position = UDim2.new(0,52,0,21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v9.1 FIXED", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0,220,0,16), Position = UDim2.new(0,52,0,5), BackgroundTransparency = 1, Text = "BSS-AIM PRO", TextColor3 = Color3.fromRGB(255,255,255), TextSize = FONT_TITLE, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0,220,0,12), Position = UDim2.new(0,52,0,21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v10 FLUID", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30,30), Position = UDim2.new(1,xOff,0.5,-15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1410,27 +1408,20 @@ UIS.InputBegan:Connect(function(i, gp)
     if i.KeyCode == CFG.PanelKey then togglePanel() end
 end)
 
--- ============ LOOPS ============
-task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
-        pcall(drawESP)
-        pcall(tryPickup)
-        pcall(trackKills)
-        task.wait(CFG.ESPRefresh)
-    end
-end)
-
+-- ============ LOOPS PRO (Todo fluido) ============
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         pcall(refreshPlayerList)
-        task.wait(0.5)
+        pcall(tryPickup)
+        pcall(trackKills)
+        task.wait(0.1) -- 10 FPS es suficiente para pickups/lista
     end
 end)
 
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         watermark.Visible = CFG.HUDWatermark
-        if CFG.HUDWatermark then wmLabel.Text = string.format("BSS-Aim v9.1 · %s", IS_PC and "PC" or "Mobile") end
+        if CFG.HUDWatermark then wmLabel.Text = string.format("BSS-Aim PRO · %s", IS_PC and "PC" or "Mobile") end
         statsHUD.Visible = CFG.HUDStats or CFG.HUDFPS or CFG.HUDPing
         if statsHUD.Visible then
             local minutes = math.floor((tick() - sessionStart) / 60)
@@ -1456,16 +1447,17 @@ task.spawn(function()
     end
 end)
 
--- ============ MAIN LOOP — FIX v9.1 (dt-compensado) ============
+-- MAIN LOOP: Corre a 60 FPS junto con RenderStepped para fluidez visual total
 pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Loop") end)
 RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1, function(dt)
-    -- FPS counter
     fpsCount += 1
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
 
+    -- ESP se actualiza 60 fps pero ultra optimizado
+    pcall(drawESP)
+
     local now = tick()
 
-    -- Target selection
     if (aimOn or CFG.TriggerBot or CFG.AutoFire) and (now - lastTargetCheck) > 0.08 then
         lastTargetCheck = now
         if not (CFG.AimOnFireOnly and not aimOn) then
@@ -1486,14 +1478,12 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
         currentTarget = nil
     end
 
-    -- Mobile button color
     if IS_MOBILE and aimBtn then
         if currentTarget then aimBtn.BackgroundColor3 = Color3.fromRGB(20,60,90)
         elseif aimOn     then aimBtn.BackgroundColor3 = Color3.fromRGB(60,20,25)
         else aimBtn.BackgroundColor3 = Color3.fromRGB(15,17,24) end
     end
 
-    -- FOV circle
     if CFG.DrawFOV and CFG.Enabled and aimOn then
         fovCircle.Position = UDim2.fromScale(0.5,0.5)
         fovCircle.Size     = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
@@ -1501,7 +1491,6 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
         fovCircle.Visible  = true
     else fovCircle.Visible = false end
 
-    -- Head dot + snapline (PC)
     if IS_PC then
         if CFG.HeadDotESP and CFG.Enabled and currentTarget then
             local aimPos = getAimPosition(currentTarget)
@@ -1530,7 +1519,6 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
     local hum   = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
-    -- FIX PRINCIPAL: Camera aim dt-compensado — converge siempre sin temblar
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
         if inCar and CFG.CarAim then
             if Camera.CameraType ~= Enum.CameraType.Scriptable then
@@ -1547,15 +1535,13 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
             local camPos  = Camera.CFrame.Position
             local desired = CFrame.lookAt(camPos, aimPos)
 
-            -- dt-compensado: misma curva de convergencia a cualquier FPS
             local baseAlpha = inCar and CFG.CarSmoothness or CFG.Smoothness
             local alpha     = 1 - (1 - baseAlpha) ^ (dt * 60)
 
-            -- Snap progresivo por distancia en píxeles al centro
             local px = targetPx()
             if CFG.SnapCloseRange then
                 if px < 12 then
-                    alpha = 1.0          -- snap total cuando está casi en punto exacto
+                    alpha = 1.0
                 elseif px < 50 then
                     alpha = math.max(alpha, 0.97)
                 elseif px < 100 then
@@ -1563,7 +1549,6 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
                 end
             end
 
-            -- Al disparar: lock total para no perder el tiro
             if isFiring then alpha = 1.0 end
 
             Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
@@ -1579,5 +1564,5 @@ RunService:BindToRenderStep("BSS_Aim_Loop", Enum.RenderPriority.Camera.Value + 1
 end)
 
 game:BindToClose(function() doSave() end)
-notify("BSS-Aim v9.1 FIXED", (IS_PC and "PC" or "Mobile") .. " · Aim + ESP arreglados", 6)
-print("[BSS-Aim v9.1] cargado — dt-fix + ESP fix activos")
+notify("BSS-Aim PRO", (IS_PC and "PC" or "Mobile") .. " · ESP 60FPS + Aim Stable", 6)
+print("[BSS-Aim PRO] cargado")

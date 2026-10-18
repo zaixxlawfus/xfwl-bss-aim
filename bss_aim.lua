@@ -382,7 +382,6 @@ local lastHealthSnapshot = {}
 local isFiring = false
 local savedShotRotation = nil
 local lastMouseMove = 0
-local manualAimOverride = false
 
 -- ============================================================================
 -- CACHE GLOBAL
@@ -615,7 +614,7 @@ local function installSilentHook()
         setreadonly(mt, false)
         mt.__namecall = newcclosure(function(self, ...)
             local method = getnamecallmethod and getnamecallmethod()
-            if method == "FireServer" and currentTarget and not manualAimOverride then
+            if method == "FireServer" and currentTarget then
                 local args = {...}
                 if #args >= 1 then
                     local first = args[1]
@@ -741,7 +740,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM
+-- ESP SYSTEM (FIX R15 refs)
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -776,7 +775,6 @@ local function updateHighlights()
             continue
         end
         local ec = _espCache[plr]
-        -- FIX: re-scan si falta CUALQUIER parte, no solo si cambió el char
         if not ec or ec.char ~= char or not ec.hrp or not ec.hrp.Parent or not ec.hum or not ec.hum.Parent then
             if not ec then ec = {}; _espCache[plr] = ec end
             refreshCharRefs(ec, char)
@@ -827,7 +825,6 @@ local function updateBillboards()
             continue
         end
         local ec = _espCache[plr]
-        -- FIX: re-scan si falta CUALQUIER parte
         if not ec or ec.char ~= char or not ec.hrp or not ec.hrp.Parent or not ec.head or not ec.head.Parent or not ec.hum or not ec.hum.Parent then
             if not ec then ec = {}; _espCache[plr] = ec end
             refreshCharRefs(ec, char)
@@ -1384,8 +1381,8 @@ local _lastScan = 0
 RunService.Heartbeat:Connect(function()
     if not _scriptActive then return end
 
-    -- FIX SWITCH: si el usuario mueve el mouse, rompe lock y no escanea
-    manualAimOverride = (tick() - lastMouseMove) < 0.15
+    -- override: si movés el mouse, rompe lock para que puedas apuntar al otro
+    local manualAimOverride = (tick() - lastMouseMove) < 0.15
     if manualAimOverride then
         currentTarget = nil
         return
@@ -1413,9 +1410,10 @@ RunService.Heartbeat:Connect(function()
         return
     end
 
+    -- Switch logic: si el nuevo es más cercano a la mira que el actual, cambia YA.
     if bestPart ~= currentTarget then
         local currentPx = targetPx()
-        if (now - lastSwitch) > 0.05 and bestScore + 10 < currentPx then
+        if bestScore < currentPx and (now - lastSwitch) > 0.05 then
             currentTarget = bestPart
             lastSwitch = now
         end
@@ -1439,6 +1437,7 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     fpsCount += 1
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
 
+    local manualAimOverride = (tick() - lastMouseMove) < 0.15
     local wantHook = CFG.SilentAim and aimOn and currentTarget and IS_PC and not manualAimOverride
     if wantHook and not silentHookInstalled then installSilentHook()
     elseif not wantHook and silentHookInstalled then uninstallSilentHook() end
@@ -1471,8 +1470,8 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
             end
         else
             if _carAimActive then exitCarAim() end
-            if Camera.CameraType ~= Enum.CameraType.Scriptable then
-                Camera.CameraType = Enum.CameraType.Scriptable
+            if Camera.CameraType ~= Enum.CameraType.Custom then
+                Camera.CameraType = Enum.CameraType.Custom
             end
             Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
         end
@@ -1502,5 +1501,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Switch fluido + ESP fix", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — mouse override activo")
+notify("BSS-Aim ULTRA v12.4", "Old feel + fluid switch + ESP fix", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — version estable")

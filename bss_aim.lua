@@ -269,7 +269,7 @@ local DEFAULTS = {
     HitboxSize = 10,
     HitboxTransparency = 0.5,
     MaxESP = 400,
-    ESPRefresh = 0.1,
+    ESPRefresh = 0.05,
     ESPColor = {1, 1, 1},
     AutoPickup = true,
     PickupRadius = 50,
@@ -360,7 +360,6 @@ local TIER_COLORS = {
 }
 local TIER_LABELS = { [5]="[Ω]", [4]="[L]", [3]="[E]", [2]="[R]", [1]="[U]", [0]="[?]" }
 
--- XENO FIX: usa PlayerGui en vez de gethui()
 local function getParent()
     return LocalPlayer:WaitForChild("PlayerGui")
 end
@@ -382,6 +381,8 @@ local sessionPickups = 0
 local lastHealthSnapshot = {}
 local isFiring = false
 local savedShotRotation = nil
+local lastMouseMove = 0
+local manualAimOverride = false
 
 -- ============================================================================
 -- CACHE GLOBAL
@@ -569,6 +570,14 @@ end
 -- ============================================================================
 -- INPUT
 -- ============================================================================
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if input.Delta.Magnitude > 0.5 then
+            lastMouseMove = tick()
+        end
+    end
+end)
+
 UserInputService.InputBegan:Connect(function(i, gp)
     if gp then return end
     if i.KeyCode == CFG.HoldKey or i.UserInputType == CFG.HoldKey then aimOn = true end
@@ -590,7 +599,7 @@ UserInputService.InputEnded:Connect(function(i, gp)
 end)
 
 -- ============================================================================
--- SILENT AIM — SOLO __namecall (FireServer rewrite)
+-- SILENT AIM
 -- ============================================================================
 local mt = nil
 pcall(function() if getrawmetatable then mt = getrawmetatable(game) end end)
@@ -606,7 +615,7 @@ local function installSilentHook()
         setreadonly(mt, false)
         mt.__namecall = newcclosure(function(self, ...)
             local method = getnamecallmethod and getnamecallmethod()
-            if method == "FireServer" and currentTarget then
+            if method == "FireServer" and currentTarget and not manualAimOverride then
                 local args = {...}
                 if #args >= 1 then
                     local first = args[1]
@@ -746,7 +755,7 @@ end
 local function refreshCharRefs(ec, char)
     ec.char = char
     ec.hrp = char:FindFirstChild("HumanoidRootPart")
-    ec.head = char:FindFirstChild("Head")
+    ec.head = char:FindFirstChild("Head") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
     ec.hum = char:FindFirstChild("Humanoid")
 end
 
@@ -767,7 +776,8 @@ local function updateHighlights()
             continue
         end
         local ec = _espCache[plr]
-        if not ec or ec.char ~= char then
+        -- FIX: re-scan si falta CUALQUIER parte, no solo si cambió el char
+        if not ec or ec.char ~= char or not ec.hrp or not ec.hrp.Parent or not ec.hum or not ec.hum.Parent then
             if not ec then ec = {}; _espCache[plr] = ec end
             refreshCharRefs(ec, char)
         end
@@ -817,7 +827,8 @@ local function updateBillboards()
             continue
         end
         local ec = _espCache[plr]
-        if not ec or ec.char ~= char then
+        -- FIX: re-scan si falta CUALQUIER parte
+        if not ec or ec.char ~= char or not ec.hrp or not ec.hrp.Parent or not ec.head or not ec.head.Parent or not ec.hum or not ec.hum.Parent then
             if not ec then ec = {}; _espCache[plr] = ec end
             refreshCharRefs(ec, char)
         end
@@ -1342,7 +1353,7 @@ task.spawn(function()
     while _scriptActive do pcall(updateHighlights); task.wait(0.25) end
 end)
 task.spawn(function()
-    while _scriptActive do pcall(updateBillboards); task.wait(CFG.ESPRefresh or 0.1) end
+    while _scriptActive do pcall(updateBillboards); task.wait(CFG.ESPRefresh or 0.05) end
 end)
 task.spawn(function()
     while _scriptActive do pcall(tryPickup); task.wait(0.2) end
@@ -1367,47 +1378,49 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- TARGET SCAN — fluido (20 Hz aiming, cooldown corto, hysteresis baja)
+-- TARGET SCAN
 -- ============================================================================
 local _lastScan = 0
 RunService.Heartbeat:Connect(function()
     if not _scriptActive then return end
+
+    -- FIX SWITCH: si el usuario mueve el mouse, rompe lock y no escanea
+    manualAimOverride = (tick() - lastMouseMove) < 0.15
+    if manualAimOverride then
+        currentTarget = nil
+        return
+    end
+
     if not (CFG.Enabled and (aimOn or CFG.TriggerBot)) then
         currentTarget = nil
         return
     end
     local now = tick()
-    -- 20 Hz cuando aiming, 10 Hz cuando trigger bot sin aim
     local scanInterval = aimOn and 0.05 or 0.1
     if now - _lastScan < scanInterval then return end
     _lastScan = now
 
     local _, bestPart, bestScore = getTargetWithScore()
 
-    -- sin target en FOV → limpia
     if not bestPart then
         currentTarget = nil
         return
     end
 
-    -- target actual muerto/fuera de rango → cambia YA, sin cooldown
     if targetDead() then
         currentTarget = bestPart
         lastSwitch = now
         return
     end
 
-    -- mejor target es distinto → switch si es suficientemente mejor y pasó cooldown corto
     if bestPart ~= currentTarget then
         local currentPx = targetPx()
-        -- hysteresis 10px (era 40), cooldown 0.05s (era 0.3)
         if (now - lastSwitch) > 0.05 and bestScore + 10 < currentPx then
             currentTarget = bestPart
             lastSwitch = now
         end
     end
 
-    -- target actual salió del FOV (1.1x en vez de 1.2x) → switch inmediato
     if currentTarget and targetPx() > CFG.FOVRadius * 1.1 then
         currentTarget = bestPart
         lastSwitch = now
@@ -1426,12 +1439,12 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     fpsCount += 1
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
 
-    local wantHook = CFG.SilentAim and aimOn and currentTarget and IS_PC
+    local wantHook = CFG.SilentAim and aimOn and currentTarget and IS_PC and not manualAimOverride
     if wantHook and not silentHookInstalled then installSilentHook()
     elseif not wantHook and silentHookInstalled then uninstallSilentHook() end
 
     local aimActive = CFG.Enabled and aimOn
-    local lockActive = aimActive and currentTarget and CFG.CameraLock
+    local lockActive = aimActive and currentTarget and CFG.CameraLock and not manualAimOverride
 
     if CFG.DrawFOV and aimActive then
         local wantSize = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
@@ -1458,8 +1471,8 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
             end
         else
             if _carAimActive then exitCarAim() end
-            if Camera.CameraType ~= Enum.CameraType.Custom then
-                Camera.CameraType = Enum.CameraType.Custom
+            if Camera.CameraType ~= Enum.CameraType.Scriptable then
+                Camera.CameraType = Enum.CameraType.Scriptable
             end
             Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
         end
@@ -1489,5 +1502,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Target switch fluido activo", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — switch fluido")
+notify("BSS-Aim ULTRA v12.4", "Switch fluido + ESP fix", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — mouse override activo") 

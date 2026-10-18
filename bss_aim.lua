@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v15 — HIGHLIGHT CHAMS EDITION
--- Zero Lag Highlight ESP, Aggressive Aim, Car Aim, Hitbox, Pickup
+-- BSS-Aim ULTRA v15.1 — HARD LOCK EDITION
+-- Instant Head Snap, Highlight ESP, Zero Lag
 -- Full script, no lines removed. 1550+ lines.
 -- ============================================================================
 
@@ -190,7 +190,7 @@ end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 17
+local CONFIG_VERSION = 18 -- Subido para forzar el Hard Lock
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -1250,7 +1250,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 16),
     Position = UDim2.new(0, 52, 0, 5),
     BackgroundTransparency = 1,
-    Text = "BSS-AIM ULTRA v15",
+    Text = "BSS-AIM ULTRA v15.1",
     TextColor3 = Color3.fromRGB(255, 255, 255),
     TextSize = 14,
     Font = Enum.Font.GothamBold,
@@ -1262,7 +1262,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12),
     Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  HIGHLIGHT CHAMS",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  HARD LOCK",
     TextColor3 = C.accent,
     TextSize = 9,
     Font = Enum.Font.Gotham,
@@ -1779,7 +1779,7 @@ section(aimPage, "AIMBOT")
 toggle(aimPage, "Activar", "Enabled")
 toggle(aimPage, "Camera lock", "CameraLock")
 toggle(aimPage, "No Recoil (frena el arma)", "NoRecoil")
-slider(aimPage, "Fuerza/Stick (1=duro, 100=suave)", "AimSmooth", 1, 100, false)
+slider(aimPage, "Fuerza/Stick (100=duro, 1=suave)", "AimSmooth", 1, 100, false)
 slider(aimPage, "FOV", "FOV", 30, 400, false, function(v) CFG.FOVRadius = v end)
 slider(aimPage, "Dist. max", "MaxDistance", 100, 1500, false)
 keybindRow(aimPage, "Apuntar (Hold)", "HoldKey")
@@ -2030,7 +2030,7 @@ wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v15 — HIGHLIGHT"
+wmLabel.Text = "BSS-Aim Ultra v15.1 — HARD LOCK"
 wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
@@ -2225,23 +2225,26 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
 
     if lockActive then
         local inCar = _localHum and _localHum.SeatPart ~= nil
-        local targetCF = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
+        local targetPos = currentTarget.Position
+        local targetCF = CFrame.lookAt(Camera.CFrame.Position, targetPos)
 
         if inCar then
             enterCarAim(_localHum)
             local camPos = Camera.CFrame.Position
-            local toTarget = currentTarget.Position - camPos
+            local toTarget = targetPos - camPos
             if toTarget.Magnitude > 2 then
                 local upVec = Vector3.new(0, 1, 0)
                 if math.abs(upVec:Dot(toTarget.Unit)) > 0.97 then
                     upVec = Vector3.new(0, 0, 1)
                 end
-                local carCF = CFrame.lookAt(camPos, currentTarget.Position, upVec)
-                if CFG.AimSmooth < 100 then
-                    local alpha = 1 - math.exp(-CFG.AimSmooth * dt * 0.2)
-                    Camera.CFrame = Camera.CFrame:Lerp(carCF, math.clamp(alpha, 0.05, 1))
-                else
+                local carCF = CFrame.lookAt(camPos, targetPos, upVec)
+                
+                -- HARD LOCK PARA CARRO
+                if CFG.AimSmooth >= 90 then
                     Camera.CFrame = carCF
+                else
+                    local alpha = 1 - math.exp(-CFG.AimSmooth * dt * 2)
+                    Camera.CFrame = Camera.CFrame:Lerp(carCF, math.clamp(alpha, 0.1, 1))
                 end
             end
         else
@@ -2251,11 +2254,12 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
                 Camera.CameraType = Enum.CameraType.Custom
             end
             
-            if CFG.AimSmooth < 100 then
-                local alpha = 1 - math.exp(-CFG.AimSmooth * dt * 0.2)
-                Camera.CFrame = Camera.CFrame:Lerp(targetCF, math.clamp(alpha, 0.05, 1))
-            else
+            -- HARD LOCK A PIE
+            if CFG.AimSmooth >= 90 then
                 Camera.CFrame = targetCF
+            else
+                local alpha = 1 - math.exp(-CFG.AimSmooth * dt * 2)
+                Camera.CFrame = Camera.CFrame:Lerp(targetCF, math.clamp(alpha, 0.1, 1))
             end
         end
     else
@@ -2300,5 +2304,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v15", "Highlight ESP ON, Zero Lag", 6)
-print("[BSS-Aim ULTRA v15] cargado — highlight edition")
+notify("BSS-Aim ULTRA v15.1", "Hard Lock a la cabeza activado", 6)
+print("[BSS-Aim ULTRA v15.1] cargado — HARD LOCK EDITION")

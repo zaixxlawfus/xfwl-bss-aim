@@ -1,7 +1,5 @@
 -- ============================================================================
--- BSS-Aim ULTRA v14 — MERGED EDITION
--- v13 UI + v12.4 config + Smoothness slider + Weapon icon ESP
--- BlockSpin only
+-- BSS-Aim ULTRA v14.1 — MERGED EDITION (UI FIX)
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -152,12 +150,12 @@ Players.PlayerAdded:Connect(hookPlayer)
 Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 
 -- ============================================================================
--- CONFIG (from v12.4 with v13 additions)
+-- CONFIG
 -- ============================================================================
 local CFG_FOLDER  = "BSS_Ultra_v14"
 local CFG_FILE    = CFG_FOLDER.."/config.json"
 local HAS_IO      = (writefile and readfile and isfile and makefolder) and true or false
-local CFG_VER     = 20
+local CFG_VER     = 21 -- forzando reset para que tome el UI fix
 
 local function mkFolder()
     if not HAS_IO then return end
@@ -203,7 +201,7 @@ local DEFAULTS = {
     Ver=CFG_VER, Enabled=true,
     HoldKey=Enum.KeyCode.E, PanelKey=Enum.KeyCode.L, CloseKey=Enum.KeyCode.M, PanicKey=Enum.KeyCode.Delete,
     FOV=130, MaxDist=500, TargetPart="Head", Priority="fov",
-    Smoothness=0,   -- 0=snap duro, subir para suave
+    Smoothness=0,
     TeamCheck=false, WallCheck=true, DrawFOV=true, CameraLock=true,
     SilentAim=true, NoRecoil=true,
     PlayerESP=true, ChamsESP=true, NameESP=true, HealthESP=true, WeaponESP=true,
@@ -211,7 +209,7 @@ local DEFAULTS = {
     HitboxOn=false, HitboxSize=10, HitboxAlpha=0.5,
     PickupOn=true, PickupRadius=50, PickupDelay=0.1,
     PickupMoney=true, PickupWeapons=true, PickupFood=true, PickupTools=true,
-    WatermarkOn=true, StatsOn=true, HUDWatermark=true, HUDFPS=true,
+    WatermarkOn=true, StatsOn=true,
     HideName=false, HideNameTxt="...", HideBoard=false,
     AutoSave=true, AutoSaveInterval=10,
 }
@@ -252,7 +250,12 @@ local C = {
     gold  = Color3.fromRGB(255,200,50),
 }
 
+-- FIX: Volvemos a gethui para que el panel sea visible
 local function gui()
+    if gethui then 
+        local ok,r = pcall(gethui)
+        if ok and r then return r end 
+    end
     return LP:WaitForChild("PlayerGui")
 end
 
@@ -302,7 +305,6 @@ local _espCache = setmetatable({}, {__mode = "k"})
 local _espHL   = {}
 local _espBB   = {}
 local _espRef  = setmetatable({},{__mode="k"})
-local _hbOrig  = setmetatable({},{__mode="k"})
 
 -- ============================================================================
 -- CAR CAMERA STATE
@@ -336,7 +338,7 @@ local function exitCarAim()
 end
 
 -- ============================================================================
--- HIDE NAME
+-- HIDE NAME (Delayed to avoid CoreGui errors)
 -- ============================================================================
 local _origName = nil
 local function applyHideName()
@@ -347,9 +349,11 @@ local function applyHideName()
         if not _origName then _origName = LP.DisplayName end
         LP.DisplayName = CFG.HideName and (CFG.HideNameTxt or "...") or _origName
     end)
-    pcall(function()
-        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideBoard)
-        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName)
+    task.delay(1, function()
+        pcall(function()
+            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideBoard)
+            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName)
+        end)
     end)
 end
 
@@ -510,7 +514,7 @@ local function disableSilent()
 end
 
 -- ============================================================================
--- HITBOX (from v12.4 with proper apply/restore)
+-- HITBOX
 -- ============================================================================
 local function applyHB(char)
     if not CFG.HitboxOn or not char then return end
@@ -585,7 +589,7 @@ end)
 -- ============================================================================
 local fovSG = Instance.new("ScreenGui")
 fovSG.Name="BSS_FOV"; fovSG.ResetOnSpawn=false; fovSG.IgnoreGuiInset=true
-fovSG.DisplayOrder=90; fovSG.Parent=gui()
+fovSG.DisplayOrder=999; fovSG.Parent=gui()
 
 local fovRing = Instance.new("Frame")
 fovRing.BackgroundTransparency=1; fovRing.AnchorPoint=Vector2.new(.5,.5)
@@ -759,7 +763,7 @@ local function updateESP()
 end
 
 -- ============================================================================
--- PICKUP (with firetouchinterest)
+-- PICKUP
 -- ============================================================================
 local _lastPick=0
 local function tryPickup()
@@ -825,7 +829,7 @@ local function pad(p,t,b,l,r) local u=Instance.new("UIPadding",p); u.PaddingTop=
 -- ============================================================================
 -- PANEL PRINCIPAL
 -- ============================================================================
-local sg = mk("ScreenGui",{Name="BSS_UI",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=100,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=gui()})
+local sg = mk("ScreenGui",{Name="BSS_UI",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=gui()})
 local PW,PH = 430,560
 
 local panel = mk("Frame",{Size=UDim2.fromOffset(PW,PH),Position=UDim2.new(.5,-PW/2,.5,-PH/2),BackgroundColor3=C.bg,BorderSizePixel=0,Parent=sg})
@@ -842,7 +846,7 @@ rnd(logoF,10); stk(logoF,Color3.fromRGB(255,255,255),1.5)
 mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.72,.72),BackgroundTransparency=1,Image=ICON,ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=logoF})
 
 mk("TextLabel",{Size=UDim2.new(0,200,0,18),Position=UDim2.new(0,52,0,4),BackgroundTransparency=1,Text="BSS-AIM ULTRA",TextColor3=Color3.fromRGB(255,255,255),TextSize=15,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
-mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
+mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14.1 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
 
 local function hdrBtn(txt,xOff)
     local b=mk("TextButton",{Size=UDim2.fromOffset(28,28),Position=UDim2.new(1,xOff,0.5,-14),BackgroundColor3=C.bg3,BorderSizePixel=0,Text=txt,TextColor3=C.acc,TextSize=14,Font=Enum.Font.GothamBold,AutoButtonColor=false,Active=true,Parent=hdr,ZIndex=2})
@@ -1143,11 +1147,11 @@ end)
 -- ============================================================================
 -- HUD
 -- ============================================================================
-local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=95,Parent=gui()})
+local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=999,Parent=gui()})
 
 local wm=mk("Frame",{Size=UDim2.fromOffset(230,26),Position=UDim2.new(0,18,0,18),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(wm,8); stk(wm,C.acc,1)
-mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14 — Merged",Parent=wm})
+mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14.1 — Merged",Parent=wm})
 
 local stats=mk("Frame",{Size=UDim2.fromOffset(175,82),Position=UDim2.new(1,-193,0,52),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(stats,8); stk(stats,C.acc2,1)
@@ -1175,7 +1179,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- TARGET SCAN — Heartbeat (60Hz)
+-- TARGET SCAN — Heartbeat
 -- ============================================================================
 local _scanT=0
 RunService.Heartbeat:Connect(function()
@@ -1236,7 +1240,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
                 end
                 Camera.CFrame = CFrame.lookAt(camPos, tPos)
             else
-                -- Smoothness 0 = snap duro (Scriptable), >0 = lerp en Custom
                 if CFG.Smoothness <= 0.01 then
                     if Camera.CameraType~=Enum.CameraType.Scriptable then
                         Camera.CameraType=Enum.CameraType.Scriptable
@@ -1285,5 +1288,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-toast("BSS-Aim ULTRA v14","Merged Edition — cargado",5)
-print("[BSS-Aim ULTRA v14] OK | UI v13 + Aim v12.4 + Hard Lock + Smoothness + Weapon Icons")
+toast("BSS-Aim ULTRA v14.1","Merged Edition — cargado",5)
+print("[BSS-Aim ULTRA v14.1] OK | UI Fix + gethui + CoreGui safe")

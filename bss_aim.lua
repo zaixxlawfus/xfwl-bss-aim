@@ -348,6 +348,17 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
+-- CACHE DE ESCRITURA — mata lag de property writes redundantes
+-- ============================================================================
+local _uiCache = {
+    hideName = nil, hideLeaderboard = nil,
+    watermarkVisible = nil, statsVisible = nil,
+    fovVisible = nil, fovSize = nil, fovColor = nil,
+}
+local _hitboxCache = setmetatable({}, {__mode = "k"})
+local _espCache = setmetatable({}, {__mode = "k"})
+
+-- ============================================================================
 -- CAR CAMERA STATE — snap directo, restauro CameraSubject
 -- ============================================================================
 local _carAimActive = false
@@ -361,7 +372,9 @@ local function enterCarAim(hum)
     _savedCamType = Camera.CameraType
     _savedCamSubject = Camera.CameraSubject
     _carSeat = hum and hum.SeatPart
-    Camera.CameraType = Enum.CameraType.Scriptable
+    if Camera.CameraType ~= Enum.CameraType.Scriptable then
+        Camera.CameraType = Enum.CameraType.Scriptable
+    end
 end
 
 local function exitCarAim()
@@ -370,7 +383,10 @@ local function exitCarAim()
     if _savedCamSubject then
         pcall(function() Camera.CameraSubject = _savedCamSubject end)
     end
-    Camera.CameraType = _savedCamType or Enum.CameraType.Custom
+    local target = _savedCamType or Enum.CameraType.Custom
+    if Camera.CameraType ~= target then
+        Camera.CameraType = target
+    end
     _savedCamType = nil
     _savedCamSubject = nil
     _carSeat = nil
@@ -381,6 +397,9 @@ end
 -- ============================================================================
 local originalDisplayName = nil
 local function applyHideName()
+    if _uiCache.hideName == CFG.HideName and _uiCache.hideLeaderboard == CFG.HideLeaderboard then return end
+    _uiCache.hideName = CFG.HideName
+    _uiCache.hideLeaderboard = CFG.HideLeaderboard
     pcall(function()
         if originalDisplayName == nil then originalDisplayName = LocalPlayer.DisplayName end
         if CFG.HideName then LocalPlayer.DisplayName = CFG.HideNameText or "..." else LocalPlayer.DisplayName = originalDisplayName end
@@ -563,8 +582,22 @@ local function applyHitbox(char)
     if not CFG.HitboxExpander then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local head = char:FindFirstChild("Head")
-    if hrp then hrp.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize); hrp.Transparency = CFG.HitboxTransparency; hrp.CanCollide = false; hrp.Massless = true end
-    if head then head.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize); head.Transparency = CFG.HitboxTransparency; head.CanCollide = false; head.Massless = true end
+    local wantSize = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize)
+    local wantT = CFG.HitboxTransparency
+    local cache = _hitboxCache[char]
+    if not cache then cache = {}; _hitboxCache[char] = cache end
+    if hrp then
+        if cache.hrpSize ~= wantSize then hrp.Size = wantSize; cache.hrpSize = wantSize end
+        if cache.hrpT ~= wantT then hrp.Transparency = wantT; cache.hrpT = wantT end
+        if cache.hrpCollide ~= false then hrp.CanCollide = false; cache.hrpCollide = false end
+        if cache.hrpMass ~= true then hrp.Massless = true; cache.hrpMass = true end
+    end
+    if head then
+        if cache.headSize ~= wantSize then head.Size = wantSize; cache.headSize = wantSize end
+        if cache.headT ~= wantT then head.Transparency = wantT; cache.headT = wantT end
+        if cache.headCollide ~= false then head.CanCollide = false; cache.headCollide = false end
+        if cache.headMass ~= true then head.Massless = true; cache.headMass = true end
+    end
 end
 
 Players.PlayerAdded:Connect(function(plr)
@@ -580,6 +613,7 @@ local tESP = {}
 local function clearESP(plr)
     if pESP[plr] then pcall(function() pESP[plr]:Destroy() end); pESP[plr] = nil end
     if tESP[plr] then pcall(function() tESP[plr]:Destroy() end); tESP[plr] = nil end
+    _espCache[plr] = nil
 end
 
 local _playerCache = {}
@@ -596,6 +630,9 @@ local function updateESP()
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearESP(plr); continue end
 
+        local ec = _espCache[plr]
+        if not ec then ec = {}; _espCache[plr] = ec end
+
         local weapEntry, weapTexture = nil, ""
         if CFG.WeaponESP then
             weapEntry, weapTexture = getEquippedWeapon(plr)
@@ -608,10 +645,13 @@ local function updateESP()
                 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 hl.Adornee = char; hl.Parent = char
                 pESP[plr] = hl
+                ec.fillColor = nil; ec.outlineColor = nil
             end
             local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-            pESP[plr].FillColor = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
-            pESP[plr].OutlineColor = (CFG.WeaponESP and weapEntry) and weapEntry.color or Color3.fromRGB(0,0,0)
+            local fillCol = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
+            local outlineCol = (CFG.WeaponESP and weapEntry) and weapEntry.color or Color3.fromRGB(0,0,0)
+            if ec.fillColor ~= fillCol then pESP[plr].FillColor = fillCol; ec.fillColor = fillCol end
+            if ec.outlineColor ~= outlineCol then pESP[plr].OutlineColor = outlineCol; ec.outlineColor = outlineCol end
         else
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
@@ -660,23 +700,35 @@ local function updateESP()
                 weapNameLbl.Text = ""; weapNameLbl.Parent = weapFrame
 
                 tESP[plr] = bb
+                ec.distBucket = nil; ec.nameText = nil; ec.hpText = nil
+                ec.hpColor = nil; ec.weapImg = nil; ec.weapImgColor = nil
+                ec.weapText = nil; ec.weapTextColor = nil; ec.weapFrameVisible = nil
             end
 
             local bbg = tESP[plr]
-            local scale = math.clamp(dist / CFG.MaxESP, 0, 1)
-            local sm = 1 + (scale * 1.5)
-            bbg.Size = UDim2.fromOffset(160 * sm, 62 * sm)
-            bbg.StudsOffsetWorldSpace = Vector3.new(0, 3 * sm, 0)
+            -- distancia cuantizada: solo reescribe Size/Offset cada ~5 studs
+            if ec.distBucket == nil or math.abs(ec.distBucket - dist) > 5 then
+                local scale = math.clamp(dist / CFG.MaxESP, 0, 1)
+                local sm = 1 + (scale * 1.5)
+                bbg.Size = UDim2.fromOffset(160 * sm, 62 * sm)
+                bbg.StudsOffsetWorldSpace = Vector3.new(0, 3 * sm, 0)
+                ec.distBucket = dist
+            end
 
             local nameLbl = bbg:FindFirstChild("Name")
-            if nameLbl then nameLbl.Visible = CFG.NameESP; nameLbl.Text = plr.Name end
+            if nameLbl then
+                if ec.nameVisible ~= CFG.NameESP then nameLbl.Visible = CFG.NameESP; ec.nameVisible = CFG.NameESP end
+                if ec.nameText ~= plr.Name then nameLbl.Text = plr.Name; ec.nameText = plr.Name end
+            end
 
             local hpLbl = bbg:FindFirstChild("HP")
             if hpLbl then
-                hpLbl.Visible = CFG.HealthESP
-                hpLbl.Text = string.format("%d HP", math.floor(hum.Health))
+                if ec.hpVisible ~= CFG.HealthESP then hpLbl.Visible = CFG.HealthESP; ec.hpVisible = CFG.HealthESP end
+                local hpText = string.format("%d HP", math.floor(hum.Health))
+                if ec.hpText ~= hpText then hpLbl.Text = hpText; ec.hpText = hpText end
                 local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                hpLbl.TextColor3 = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
+                local hpCol = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
+                if ec.hpColor ~= hpCol then hpLbl.TextColor3 = hpCol; ec.hpColor = hpCol end
             end
 
             local weapFrame = bbg:FindFirstChild("WeapFrame")
@@ -684,20 +736,23 @@ local function updateESP()
                 local weapImg = weapFrame:FindFirstChild("WeapImg")
                 local weapNameLbl = weapFrame:FindFirstChild("WeapName")
                 if CFG.WeaponESP and weapEntry then
-                    weapFrame.Visible = true
+                    if ec.weapFrameVisible ~= true then weapFrame.Visible = true; ec.weapFrameVisible = true end
                     local tierTag = TIER_LABELS[weapEntry.tier] or "[?]"
+                    local wText = tierTag .. " " .. weapEntry.label
+                    local wColor = TIER_COLORS[weapEntry.tier] or Color3.fromRGB(200,200,200)
                     if weapImg then
-                        weapImg.Image = weapTexture
-                        weapImg.ImageColor3 = weapEntry.color
-                        weapImg.Visible = weapTexture ~= ""
+                        if ec.weapImg ~= weapTexture then weapImg.Image = weapTexture; ec.weapImg = weapTexture end
+                        if ec.weapImgColor ~= weapEntry.color then weapImg.ImageColor3 = weapEntry.color; ec.weapImgColor = weapEntry.color end
+                        local wv = weapTexture ~= ""
+                        if ec.weapImgVisible ~= wv then weapImg.Visible = wv; ec.weapImgVisible = wv end
                     end
                     if weapNameLbl then
-                        weapNameLbl.Text = tierTag .. " " .. weapEntry.label
-                        weapNameLbl.TextColor3 = TIER_COLORS[weapEntry.tier] or Color3.fromRGB(200,200,200)
-                        weapNameLbl.Visible = true
+                        if ec.weapText ~= wText then weapNameLbl.Text = wText; ec.weapText = wText end
+                        if ec.weapTextColor ~= wColor then weapNameLbl.TextColor3 = wColor; ec.weapTextColor = wColor end
+                        if ec.weapTextVisible ~= true then weapNameLbl.Visible = true; ec.weapTextVisible = true end
                     end
                 else
-                    weapFrame.Visible = false
+                    if ec.weapFrameVisible ~= false then weapFrame.Visible = false; ec.weapFrameVisible = false end
                 end
             end
         else
@@ -1143,9 +1198,14 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     elseif not (aimOn or CFG.TriggerBot) then currentTarget = nil end
 
     if CFG.DrawFOV and CFG.Enabled and aimOn then
-        fovCircle.Position = UDim2.fromScale(0.5, 0.5); fovCircle.Size = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
-        fovStroke.Color = currentTarget and C.aimLock or C.accent; fovCircle.Visible = true
-    else fovCircle.Visible = false end
+        local wantSize = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
+        local wantColor = currentTarget and C.aimLock or C.accent
+        if _uiCache.fovVisible ~= true then fovCircle.Visible = true; _uiCache.fovVisible = true end
+        if _uiCache.fovSize ~= wantSize then fovCircle.Size = wantSize; _uiCache.fovSize = wantSize end
+        if _uiCache.fovColor ~= wantColor then fovStroke.Color = wantColor; _uiCache.fovColor = wantColor end
+    else
+        if _uiCache.fovVisible ~= false then fovCircle.Visible = false; _uiCache.fovVisible = false end
+    end
 
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
@@ -1180,18 +1240,20 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         end
     end
 
-    watermark.Visible = CFG.HUDWatermark
+    if _uiCache.watermarkVisible ~= CFG.HUDWatermark then watermark.Visible = CFG.HUDWatermark; _uiCache.watermarkVisible = CFG.HUDWatermark end
 
     if CFG.HUDFPS then
-        statsHUD.Visible = true
+        if _uiCache.statsVisible ~= true then statsHUD.Visible = true; _uiCache.statsVisible = true end
         local minutes = math.floor((now - sessionStart) / 60)
         if sessionKills ~= _lastKills or sessionPickups ~= _lastPickups or minutes ~= _lastMinutes or currentFPS ~= _lastFPS then
             _lastKills = sessionKills; _lastPickups = sessionPickups; _lastMinutes = minutes; _lastFPS = currentFPS
             stLabel.Text = string.format("Kills:    %d\nPickups:  %d\nSession:  %dm\nFPS:      %d", sessionKills, sessionPickups, minutes, currentFPS)
             statsHUD.Size = UDim2.fromOffset(180, 76)
         end
-    else statsHUD.Visible = false end
+    else
+        if _uiCache.statsVisible ~= false then statsHUD.Visible = false; _uiCache.statsVisible = false end
+    end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Car Aim fix v2 — snap + CameraSubject", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — car aim v2")
+notify("BSS-Aim ULTRA v12.4", "Lag fix — write-cache ESP/hitbox/HUD", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — lag-kill activo")

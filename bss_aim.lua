@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v13.2
--- Anti-Custom Nametag, Full Weapon DB, ESP Full Distance, Stealth Pickup
+-- BSS-Aim ULTRA v13.3
+-- ESP Pro Style (Neon Tags + Deep Highlight), Full DB, Stealth Pickup
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -66,6 +66,7 @@ local WEAPON_DB = {
     ["Machete"]           = {tier=3, label="Machete",     col=Color3.fromRGB(160,80,255)},
     ["Shovel"]            = {tier=3, label="Shovel",      col=Color3.fromRGB(160,80,255)},
     ["Katana"]            = {tier=3, label="Katana",      col=Color3.fromRGB(160,80,255)},
+    ["Punta de la espada"]= {tier=3, label="Punta",       col=Color3.fromRGB(160,80,255)},
     ["Brainrot Slapper"]  = {tier=2, label="Brainrot",    col=Color3.fromRGB(80,220,120)},
     ["Hunting Rifle"]     = {tier=2, label="Hunt.Rifle",  col=Color3.fromRGB(80,220,120)},
     ["Uzi"]               = {tier=2, label="Uzi",         col=Color3.fromRGB(80,220,120)},
@@ -83,13 +84,6 @@ local WEAPON_DB = {
     ["G3"]                = {tier=1, label="G3",          col=Color3.fromRGB(180,180,180)},
     ["C9"]                = {tier=1, label="C9",          col=Color3.fromRGB(180,180,180)},
     ["Minigun"]           = {tier=1, label="Minigun",     col=Color3.fromRGB(180,180,180)},
-}
-
-local TIER_LABEL = {[5]="[Ω]",[4]="[L]",[3]="[E]",[2]="[R]",[1]="[C]",[0]="[?]"}
-local TIER_COL   = {
-    [5]=Color3.fromRGB(255,50,50),[4]=Color3.fromRGB(255,140,0),
-    [3]=Color3.fromRGB(160,80,255),[2]=Color3.fromRGB(80,220,120),
-    [1]=Color3.fromRGB(180,180,180),[0]=Color3.fromRGB(120,120,120),
 }
 
 local function resolveWeapon(name)
@@ -179,7 +173,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 22
+local CONFIG_VERSION = 23 -- Forzando reset para el nuevo estilo
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -384,10 +378,9 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- HIDE NAME (ANTI-CUSTOM NAMETAG)
+-- HIDE NAME
 -- ============================================================================
 local originalDisplayName = nil
-
 local function applyHideName()
     if _uiCache and _uiCache.hideName == CFG.HideName and _uiCache.hideBoard == CFG.HideLeaderboard then return end
     if not _uiCache then _uiCache = {} end
@@ -400,14 +393,12 @@ local function applyHideName()
     end)
 end
 
--- Loop que destruye los nametags falsos del juego
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         if CFG.HideName then
             pcall(function()
                 if originalDisplayName == nil then originalDisplayName = LocalPlayer.DisplayName end
                 
-                -- 1. Ocultar el nombre de Roblox por defecto
                 LocalPlayer.DisplayName = CFG.HideNameText or "..."
                 local char = LocalPlayer.Character
                 if char then
@@ -417,7 +408,6 @@ task.spawn(function()
                         hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
                     end
                     
-                    -- 2. Buscar y ocultar el nametag custom de BlockSpin
                     for _, v in ipairs(char:GetDescendants()) do
                         if v:IsA("BillboardGui") or v:IsA("TextLabel") or v:IsA("SurfaceGui") then
                             if v.Name:lower():find("name") or v.Name:lower():find("tag") or v:IsA("BillboardGui") then
@@ -440,7 +430,6 @@ task.spawn(function()
                             hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
                         end
                         
-                        -- Restaurar nametags
                         for _, v in ipairs(char:GetDescendants()) do
                             if v:IsA("BillboardGui") or v:IsA("TextLabel") or v:IsA("SurfaceGui") then
                                 if v.Name:lower():find("name") or v.Name:lower():find("tag") or v:IsA("BillboardGui") then
@@ -703,7 +692,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM
+-- ESP SYSTEM (PRO STYLE)
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -713,6 +702,7 @@ local function clearESP(plr)
     if tESP[plr] then pcall(function() tESP[plr]:Destroy() end); tESP[plr] = nil end
 end
 
+-- ESTILO PRO: Texto con corchetes, negrita, colores neón y fondo oscuro
 local function makeBB(head)
     local bb = Instance.new("BillboardGui")
     bb.Name = "BSS_TXT"; bb.AlwaysOnTop = true
@@ -721,33 +711,33 @@ local function makeBB(head)
     local nameLbl = Instance.new("TextLabel")
     nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
     nameLbl.Size = UDim2.new(1, 0, 0, 16); nameLbl.Position = UDim2.new(0, 0, 0, 0)
-    nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 14
-    nameLbl.TextColor3 = Color3.new(1,1,1); nameLbl.TextStrokeTransparency = 0
+    nameLbl.Font = Enum.Font.GothamBlack; nameLbl.TextSize = 14 -- Negrita Pro
+    nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255); nameLbl.TextStrokeTransparency = 0.5 -- Borde suave
     nameLbl.Parent = bb
     
     local hpLbl = Instance.new("TextLabel")
     hpLbl.Name = "HP"; hpLbl.BackgroundTransparency = 1
     hpLbl.Size = UDim2.new(1, 0, 0, 14); hpLbl.Position = UDim2.new(0, 0, 0, 16)
     hpLbl.Font = Enum.Font.GothamBold; hpLbl.TextSize = 12
-    hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0
+    hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0.5
     hpLbl.Parent = bb
     
+    -- El arma con el formato [AK47]
+    local wepFrame = Instance.new("Frame")
+    wepFrame.Name = "WeapFrame"; wepFrame.BackgroundTransparency = 1
+    wepFrame.Size = UDim2.new(1, 0, 0, 20); wepFrame.Position = UDim2.new(0, 0, 0, 32)
+    wepFrame.Parent = bb
+
     local wepLbl = Instance.new("TextLabel")
-    wepLbl.Name = "Wep"; wepLbl.BackgroundTransparency = 1
-    wepLbl.Size = UDim2.new(1, 0, 0, 14); wepLbl.Position = UDim2.new(0, 0, 0, 30)
-    wepLbl.Font = Enum.Font.GothamBold; wepLbl.TextSize = 11
+    wepLbl.Name = "Wep"; wepLbl.BackgroundTransparency = 0.2 -- Fondo oscuro semitransparente para resaltar
+    wepLbl.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    wepLbl.Size = UDim2.new(1, 0, 1, 0); wepLbl.Position = UDim2.new(0, 0, 0, 0)
+    wepLbl.Font = Enum.Font.GothamBlack; wepLbl.TextSize = 13
     wepLbl.TextColor3 = C.gold; wepLbl.TextStrokeTransparency = 0
     wepLbl.TextXAlignment = Enum.TextXAlignment.Center
-    wepLbl.TextTruncate = Enum.TextTruncate.AtEnd
-    wepLbl.Parent = bb
+    wepLbl.Parent = wepFrame
 
-    local wepImg = Instance.new("ImageLabel")
-    wepImg.Name = "WepImg"; wepImg.BackgroundTransparency = 1
-    wepImg.Size = UDim2.fromOffset(16, 16); wepImg.Position = UDim2.new(0, 4, 0, 29)
-    wepImg.ScaleType = Enum.ScaleType.Fit; wepImg.Image = ""; wepImg.Visible = false
-    wepImg.Parent = bb
-
-    return bb, {name=nameLbl, hp=hpLbl, wep=wepLbl, img=wepImg}
+    return bb, {name=nameLbl, hp=hpLbl, wep=wepLbl, frame=wepFrame}
 end
 
 local _espRef = {}
@@ -770,30 +760,36 @@ local function updateESP()
         
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
 
+        -- HIGHLIGHT PRO: Contorno Neón
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
-                hl.Name = "BSS_HL"; hl.FillTransparency = 0.4; hl.OutlineTransparency = 0
+                hl.Name = "BSS_HL"; 
+                hl.FillTransparency = 0.6 -- Relleno más transparente
+                hl.OutlineTransparency = 0
                 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 hl.Adornee = char; hl.Parent = char
                 pESP[plr] = hl
             end
             
             local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-            if hpR > 0.6 then pESP[plr].FillColor = C.hp
-            elseif hpR > 0.3 then pESP[plr].FillColor = Color3.fromRGB(240, 200, 80)
-            else pESP[plr].FillColor = C.danger end
+            -- Colores neón para el relleno
+            if hpR > 0.6 then pESP[plr].FillColor = Color3.fromRGB(0, 255, 127) -- Verde neón
+            elseif hpR > 0.3 then pESP[plr].FillColor = Color3.fromRGB(255, 215, 0) -- Amarillo neón
+            else pESP[plr].FillColor = Color3.fromRGB(255, 0, 0) end -- Rojo neón
             
+            -- Contorno del color del arma o un color fijo brillante
             if CFG.WeaponESP then
                 local we = getBestWeapon(plr)
-                pESP[plr].OutlineColor = we and we.col or Color3.fromRGB(0,0,0)
+                pESP[plr].OutlineColor = we and we.col or Color3.fromRGB(255, 255, 255)
             else
-                pESP[plr].OutlineColor = Color3.fromRGB(0,0,0)
+                pESP[plr].OutlineColor = Color3.fromRGB(255, 255, 255)
             end
         else
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
+        -- BILLBOARD
         if dist <= CFG.MaxESP then
             if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
                 local refs = _espRef[plr]
@@ -818,30 +814,25 @@ local function updateESP()
                     if CFG.HealthESP then
                         refs.hp.Text = string.format("%d HP", math.floor(hum.Health))
                         local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                        if hpR > 0.6 then refs.hp.TextColor3 = C.hp
-                        elseif hpR > 0.3 then refs.hp.TextColor3 = Color3.fromRGB(240, 200, 80)
-                        else refs.hp.TextColor3 = C.danger end
+                        if hpR > 0.6 then refs.hp.TextColor3 = Color3.fromRGB(0, 255, 127)
+                        elseif hpR > 0.3 then refs.hp.TextColor3 = Color3.fromRGB(255, 215, 0)
+                        else refs.hp.TextColor3 = Color3.fromRGB(255, 0, 0) end
                     end
                 end
 
                 if refs.wep and CFG.WeaponESP then
-                    local we, tex = getBestWeapon(plr)
+                    local we = getBestWeapon(plr)
                     if we then
-                        refs.wep.Visible = true
-                        refs.wep.Text = (TIER_LABEL[we.tier] or "[?]").." "..we.label
-                        refs.wep.TextColor3 = TIER_COL[we.tier] or C.accent
-                        
-                        if refs.img then
-                            local hasImg = (tex and tex ~= "")
-                            refs.img.Image = hasImg and tex or ""
-                            refs.img.Visible = hasImg
-                            refs.img.ImageColor3 = Color3.new(1,1,1)
-                            refs.wep.Position = hasImg and UDim2.new(0, 20, 0, 30) or UDim2.new(0, 0, 0, 30)
-                        end
+                        refs.frame.Visible = true
+                        -- FORMATO PRO: [AK47]
+                        refs.wep.Text = string.format("[%s]", string.upper(we.label))
+                        refs.wep.TextColor3 = we.col
+                        -- Efecto de gradiente para el texto si es legendario (opcional, aquí solo color solido neón)
                     else
-                        refs.wep.Visible = false
-                        if refs.img then refs.img.Visible = false end
+                        refs.frame.Visible = false
                     end
+                else
+                    if refs.frame then refs.frame.Visible = false end
                 end
             else
                 if tESP[plr] then tESP[plr]:Destroy(); tESP[plr] = nil; _espRef[plr] = nil end
@@ -966,7 +957,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v13.2", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v13.3", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1280,7 +1271,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v13.2"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v13.3"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
@@ -1407,5 +1398,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v13.2", "Anti-Custom Nametag activo", 6)
-print("[BSS-Aim ULTRA v13.2] cargado - Anti-Custom Nametag")
+notify("BSS-Aim ULTRA v13.3", "ESP Pro Style activado", 6)
+print("[BSS-Aim ULTRA v13.3] cargado - ESP Estilo Pro")

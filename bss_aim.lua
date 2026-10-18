@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v13.3
--- ESP Pro Style (Neon Tags + Deep Highlight), Full DB, Stealth Pickup
+-- BSS-Aim ULTRA v13.4
+-- ESP PRO Style (Fix) + Full Weapon DB + Hide Name Loop
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -88,16 +88,25 @@ local WEAPON_DB = {
 
 local function resolveWeapon(name)
     if not name then return nil end
-    local e = WEAPON_DB[name]; if e then return e end
+    -- Búsqueda exacta
+    local e = WEAPON_DB[name]
+    if e then return e end
+    -- Búsqueda por minúsculas
     local lo = name:lower()
-    for k,v in pairs(WEAPON_DB) do if k:lower()==lo then return v end end
-    for k,v in pairs(WEAPON_DB) do if lo:find(k:lower(),1,true) then return v end end
+    for k,v in pairs(WEAPON_DB) do 
+        if k:lower()==lo then return v end 
+    end
+    -- Búsqueda por contenido (ej: "AK47 Dorado" -> "AK47")
+    for k,v in pairs(WEAPON_DB) do 
+        if lo:find(k:lower(),1,true) then return v end 
+    end
     return nil
 end
 
 local _wepCache = {}
 local function invalidateWep(uid) _wepCache[uid] = nil end
 
+-- FIX: Solo buscar herramientas (Tool), ignorar Modelos o accesorios
 local function getBestWeapon(plr)
     local uid  = plr.UserId
     local char = plr.Character
@@ -107,18 +116,17 @@ local function getBestWeapon(plr)
     
     local cached = _wepCache[uid]
     if cached and cached.key == key then 
-        if cached.entry then return cached.entry, cached.tex end
+        return cached.entry, cached.tex 
     end
     
     local best, bestTier, bestTex = nil, -1, ""
     local function checkTool(t)
-        if t:IsA("Tool") or (t:IsA("Model") and t.Name ~= "HumanoidRootPart") then
-            local n = t.Name:lower()
-            if n:find("humanoid") or n:find("torso") or n:find("arm") or n:find("leg") or n:find("head") then return end
-            
+        -- Estricto: Solo Tools. Si no es Tool, lo ignora.
+        if t:IsA("Tool") then
             local e = resolveWeapon(t.Name)
             local tier = e and e.tier or 0
-            if tier > bestTier or (best == nil and tier == 0) then
+            -- Solo lo asigna si tiene mayor tier o si no hay nada y al menos no tiene nombre de parte del cuerpo
+            if tier > bestTier then
                 bestTier = tier
                 best     = e or {tier=0,label=t.Name:sub(1,14),col=Color3.fromRGB(200,200,200)}
                 bestTex  = (t.TextureId and t.TextureId~="") and t.TextureId or ""
@@ -126,6 +134,7 @@ local function getBestWeapon(plr)
         end
     end
     
+    -- Buscar recursivamente pero validando que sea Tool
     if bp then
         for _, t in ipairs(bp:GetDescendants()) do checkTool(t) end
     end
@@ -139,7 +148,9 @@ end
 
 local function hookWeaponCache(plr)
     if plr == LocalPlayer then return end
-    local function onTool(c) if c:IsA("Tool") or c:IsA("Model") then invalidateWep(plr.UserId) end end
+    local function onTool(c) 
+        if c:IsA("Tool") then invalidateWep(plr.UserId) end 
+    end
     local bp = plr:FindFirstChild("Backpack")
     if bp then 
         bp.ChildAdded:Connect(onTool); bp.ChildRemoved:Connect(onTool)
@@ -173,7 +184,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 23 -- Forzando reset para el nuevo estilo
+local CONFIG_VERSION = 24 -- Subido para forzar el reset de ESP
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -378,7 +389,7 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- HIDE NAME
+-- HIDE NAME (FORZADO)
 -- ============================================================================
 local originalDisplayName = nil
 local function applyHideName()
@@ -692,7 +703,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM (PRO STYLE)
+-- ESP SYSTEM (ESTILO PRO)
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -702,7 +713,6 @@ local function clearESP(plr)
     if tESP[plr] then pcall(function() tESP[plr]:Destroy() end); tESP[plr] = nil end
 end
 
--- ESTILO PRO: Texto con corchetes, negrita, colores neón y fondo oscuro
 local function makeBB(head)
     local bb = Instance.new("BillboardGui")
     bb.Name = "BSS_TXT"; bb.AlwaysOnTop = true
@@ -711,8 +721,8 @@ local function makeBB(head)
     local nameLbl = Instance.new("TextLabel")
     nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
     nameLbl.Size = UDim2.new(1, 0, 0, 16); nameLbl.Position = UDim2.new(0, 0, 0, 0)
-    nameLbl.Font = Enum.Font.GothamBlack; nameLbl.TextSize = 14 -- Negrita Pro
-    nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255); nameLbl.TextStrokeTransparency = 0.5 -- Borde suave
+    nameLbl.Font = Enum.Font.GothamBlack; nameLbl.TextSize = 14
+    nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255); nameLbl.TextStrokeTransparency = 0.5
     nameLbl.Parent = bb
     
     local hpLbl = Instance.new("TextLabel")
@@ -722,22 +732,19 @@ local function makeBB(head)
     hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0.5
     hpLbl.Parent = bb
     
-    -- El arma con el formato [AK47]
-    local wepFrame = Instance.new("Frame")
-    wepFrame.Name = "WeapFrame"; wepFrame.BackgroundTransparency = 1
-    wepFrame.Size = UDim2.new(1, 0, 0, 20); wepFrame.Position = UDim2.new(0, 0, 0, 32)
-    wepFrame.Parent = bb
-
+    -- TAG ESTILO TIKTOK (Caja oscura con texto de color neón)
     local wepLbl = Instance.new("TextLabel")
-    wepLbl.Name = "Wep"; wepLbl.BackgroundTransparency = 0.2 -- Fondo oscuro semitransparente para resaltar
+    wepLbl.Name = "Wep"
     wepLbl.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    wepLbl.Size = UDim2.new(1, 0, 1, 0); wepLbl.Position = UDim2.new(0, 0, 0, 0)
-    wepLbl.Font = Enum.Font.GothamBlack; wepLbl.TextSize = 13
-    wepLbl.TextColor3 = C.gold; wepLbl.TextStrokeTransparency = 0
+    wepLbl.BackgroundTransparency = 0.5 -- Fondo semitransparente
+    wepLbl.BorderSizePixel = 0
+    wepLbl.Size = UDim2.new(1, 0, 0, 18); wepLbl.Position = UDim2.new(0, 0, 0, 32)
+    wepLbl.Font = Enum.Font.GothamBlack; wepLbl.TextSize = 12
+    wepLbl.TextColor3 = Color3.fromRGB(255, 255, 255); wepLbl.TextStrokeTransparency = 0
     wepLbl.TextXAlignment = Enum.TextXAlignment.Center
-    wepLbl.Parent = wepFrame
+    wepLbl.Parent = bb
 
-    return bb, {name=nameLbl, hp=hpLbl, wep=wepLbl, frame=wepFrame}
+    return bb, {name=nameLbl, hp=hpLbl, wep=wepLbl}
 end
 
 local _espRef = {}
@@ -760,12 +767,12 @@ local function updateESP()
         
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
 
-        -- HIGHLIGHT PRO: Contorno Neón
+        -- HIGHLIGHT PRO
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
                 hl.Name = "BSS_HL"; 
-                hl.FillTransparency = 0.6 -- Relleno más transparente
+                hl.FillTransparency = 0.6
                 hl.OutlineTransparency = 0
                 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 hl.Adornee = char; hl.Parent = char
@@ -773,12 +780,10 @@ local function updateESP()
             end
             
             local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-            -- Colores neón para el relleno
-            if hpR > 0.6 then pESP[plr].FillColor = Color3.fromRGB(0, 255, 127) -- Verde neón
-            elseif hpR > 0.3 then pESP[plr].FillColor = Color3.fromRGB(255, 215, 0) -- Amarillo neón
-            else pESP[plr].FillColor = Color3.fromRGB(255, 0, 0) end -- Rojo neón
+            if hpR > 0.6 then pESP[plr].FillColor = Color3.fromRGB(0, 255, 127)
+            elseif hpR > 0.3 then pESP[plr].FillColor = Color3.fromRGB(255, 215, 0)
+            else pESP[plr].FillColor = Color3.fromRGB(255, 0, 0) end
             
-            -- Contorno del color del arma o un color fijo brillante
             if CFG.WeaponESP then
                 local we = getBestWeapon(plr)
                 pESP[plr].OutlineColor = we and we.col or Color3.fromRGB(255, 255, 255)
@@ -789,7 +794,7 @@ local function updateESP()
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
-        -- BILLBOARD
+        -- BILLBOARD (Textos)
         if dist <= CFG.MaxESP then
             if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
                 local refs = _espRef[plr]
@@ -823,16 +828,14 @@ local function updateESP()
                 if refs.wep and CFG.WeaponESP then
                     local we = getBestWeapon(plr)
                     if we then
-                        refs.frame.Visible = true
-                        -- FORMATO PRO: [AK47]
+                        refs.wep.Visible = true
                         refs.wep.Text = string.format("[%s]", string.upper(we.label))
                         refs.wep.TextColor3 = we.col
-                        -- Efecto de gradiente para el texto si es legendario (opcional, aquí solo color solido neón)
                     else
-                        refs.frame.Visible = false
+                        refs.wep.Visible = false
                     end
                 else
-                    if refs.frame then refs.frame.Visible = false end
+                    if refs.wep then refs.wep.Visible = false end
                 end
             else
                 if tESP[plr] then tESP[plr]:Destroy(); tESP[plr] = nil; _espRef[plr] = nil end
@@ -906,7 +909,7 @@ local function tryPickupLoop()
     
     local picked = false
     for _, m in ipairs(folder:GetChildren()) do
-        local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
+        local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m:PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
         if not part then continue end
         local d = (hrp.Position - part.Position).Magnitude
         if d < CFG.PickupRadius then
@@ -957,7 +960,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v13.3", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v13.4", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1271,7 +1274,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v13.3"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v13.4"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
@@ -1398,5 +1401,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v13.3", "ESP Pro Style activado", 6)
-print("[BSS-Aim ULTRA v13.3] cargado - ESP Estilo Pro")
+notify("BSS-Aim ULTRA v13.4", "ESP Pro Fix + Full DB", 6)
+print("[BSS-Aim ULTRA v13.4] cargado - ESP Pro Fix")

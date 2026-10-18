@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v15.2 — ABSOLUTE GLUE LOCK
--- 100% Head Lock, Highlight ESP, Zero Lag
+-- BSS-Aim ULTRA v15.3 — CAMERA CUSTOM HARD LOCK
+-- Sigue al enemigo caminando, Head Lock, Highlight ESP
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -174,7 +174,7 @@ end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 19 -- Subido para forzar el Hard Lock pegajoso
+local CONFIG_VERSION = 20 -- Subido para forzar el Camera Custom
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -703,7 +703,7 @@ end
 
 local function targetPx()
     if not currentTarget then return math.huge end
-    local sp, on = Camera:WorldToViewportPoint(currentTarget.Position)
+    local sp, on = Camera.WorldToViewportPoint(Camera, currentTarget.Position)
     if not on then return math.huge end
     return (Vector2.new(sp.X, sp.Y) - _vpCenter).Magnitude
 end
@@ -1234,7 +1234,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 16),
     Position = UDim2.new(0, 52, 0, 5),
     BackgroundTransparency = 1,
-    Text = "BSS-AIM ULTRA v15.2",
+    Text = "BSS-AIM ULTRA v15.3",
     TextColor3 = Color3.fromRGB(255, 255, 255),
     TextSize = 14,
     Font = Enum.Font.GothamBold,
@@ -1246,7 +1246,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12),
     Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  GLUE LOCK",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  HEAD LOCK",
     TextColor3 = C.accent,
     TextSize = 9,
     Font = Enum.Font.Gotham,
@@ -2014,7 +2014,7 @@ wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v15.2 — GLUE LOCK"
+wmLabel.Text = "BSS-Aim Ultra v15.3 — HEAD LOCK"
 wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
@@ -2101,13 +2101,13 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- TARGET SCAN (AGGRESSIVE 50Hz)
+-- TARGET SCAN
 -- ============================================================================
 local _lastScan = 0
 RunService.Heartbeat:Connect(function()
     if not _scriptActive then return end
 
-    local manualAim = (tick() - lastMouseMove) < 0.15
+    local manualAim = (tick() - lastMouseMove) < 0.1
     if manualAim then
         currentTarget = nil
         return
@@ -2138,7 +2138,7 @@ RunService.Heartbeat:Connect(function()
 
     if bestPart ~= currentTarget then
         local currentPx = targetPx()
-        if bestScore < currentPx and (now - lastSwitch) > 0.01 then
+        if bestScore < currentPx and (now - lastSwitch) > 0.05 then
             currentTarget = bestPart
             lastSwitch = now
         end
@@ -2151,7 +2151,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================================
--- MAIN RENDER LOOP (100% GLUE LOCK)
+-- MAIN RENDER LOOP
 -- ============================================================================
 local _lastKills = -1
 local _lastPickups = -1
@@ -2172,7 +2172,7 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         fpsTimer = tick()
     end
 
-    local manualAim = (tick() - lastMouseMove) < 0.15
+    local manualAim = (tick() - lastMouseMove) < 0.1
     local wantHook = CFG.SilentAim and aimOn and currentTarget and IS_PC and not manualAim
 
     if wantHook and not silentHookInstalled then
@@ -2211,9 +2211,9 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         local inCar = _localHum and _localHum.SeatPart ~= nil
         local targetPos = currentTarget.Position
         
-        -- FORZAMOS SCRIPTABLE PARA QUE LA FÍSICA NO MUEVA LA CÁMARA
-        if Camera.CameraType ~= Enum.CameraType.Scriptable then
-            Camera.CameraType = Enum.CameraType.Scriptable
+        -- Volvemos a Custom para que siga caminando
+        if not inCar and Camera.CameraType ~= Enum.CameraType.Custom then
+            Camera.CameraType = Enum.CameraType.Custom
         end
 
         if inCar then
@@ -2227,7 +2227,7 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
                 end
                 local carCF = CFrame.lookAt(camPos, targetPos, upVec)
                 
-                -- HARD LOCK 100%
+                -- HARD LOCK CAR
                 if CFG.AimSmooth >= 90 then
                     Camera.CFrame = carCF
                 else
@@ -2238,9 +2238,8 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         else
             if _carAimActive then exitCarAim() end
             
+            -- HARD LOCK A PIE (SIGUE AL ENEMIGO)
             local targetCF = CFrame.lookAt(Camera.CFrame.Position, targetPos)
-            
-            -- HARD LOCK 100% GLUE
             if CFG.AimSmooth >= 90 then
                 Camera.CFrame = targetCF
             else
@@ -2290,5 +2289,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v15.2", "100% Glue Lock a la cabeza activo", 6)
-print("[BSS-Aim ULTRA v15.2] cargado — GLUE LOCK EDITION")
+notify("BSS-Aim ULTRA v15.3", "Head Lock activo + Sigue caminando", 6)
+print("[BSS-Aim ULTRA v15.3] cargado — Camera Custom Head Lock")

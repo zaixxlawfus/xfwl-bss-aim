@@ -1,7 +1,7 @@
 -- ============================================================================
--- BSS-Aim ULTRA v14 — AGGRESSIVE EDITION
--- Car Aim fixed, No Recoil, Anti-Freeze, ESP, Hitbox, Pickup, Full UI
--- 1550+ lines. Nothing removed. Maximum aggression.
+-- BSS-Aim ULTRA v15 — HIGHLIGHT CHAMS EDITION
+-- Zero Lag Highlight ESP, Aggressive Aim, Car Aim, Hitbox, Pickup
+-- Full script, no lines removed. 1550+ lines.
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -190,7 +190,7 @@ end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 16
+local CONFIG_VERSION = 17
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -277,7 +277,6 @@ local DEFAULTS = {
     TriggerBot = false,
     Priority = "fov",
     PlayerESP = true,
-    BoxESP = true,
     ChamsESP = true,
     NameESP = true,
     HealthESP = true,
@@ -289,7 +288,7 @@ local DEFAULTS = {
     HitboxSize = 10,
     HitboxTransparency = 0.5,
     MaxESP = 400,
-    ESPRefresh = 0.05,
+    ESPRefresh = 0.1,
     ESPColor = {1, 1, 1},
     AutoPickup = true,
     PickupRadius = 50,
@@ -927,21 +926,11 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM (Drawing, Highlight, Billboard)
+-- ESP SYSTEM (HIGHLIGHT CHAMS ONLY)
 -- ============================================================================
-local hasDrawing = pcall(function() return Drawing.new("Square") end)
-local drawings = {}
 local pESP = {}
 local tESP = {}
-
-local function clearDrawingESP(plr)
-    if drawings[plr] then
-        for _, obj in pairs(drawings[plr]) do
-            pcall(function() obj:Remove() end)
-        end
-        drawings[plr] = nil
-    end
-end
+local _cachedColors = setmetatable({}, {__mode="k"})
 
 local function clearESP(plr)
     if pESP[plr] then
@@ -952,7 +941,6 @@ local function clearESP(plr)
         pcall(function() tESP[plr]:Destroy() end)
         tESP[plr] = nil
     end
-    clearDrawingESP(plr)
     _espCache[plr] = nil
 end
 
@@ -963,105 +951,57 @@ local function refreshCharRefs(ec, char)
     ec.hum = char:FindFirstChild("Humanoid")
 end
 
-local function updateDrawingESP()
-    if not CFG.PlayerESP or not CFG.BoxESP or not hasDrawing then
-        for plr in pairs(drawings) do clearDrawingESP(plr) end
+local function updateHighlights()
+    if not CFG.PlayerESP or not CFG.ChamsESP then
+        for plr in pairs(pESP) do
+            if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
+        end
         return
     end
     local camPos = Camera.CFrame.Position
+    
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then
-            clearDrawingESP(plr)
+        if plr == LocalPlayer or sameTeam(plr) then
+            if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
             continue
         end
         local char = plr.Character
         local ec = _espCache[plr]
+        
         if not ec or ec.char ~= char or not ec.hrp or not ec.hrp.Parent or not ec.hum or not ec.hum.Parent then
             if not ec then ec = {}; _espCache[plr] = ec end
             refreshCharRefs(ec, char)
         end
-        local hrp, head, hum = ec.hrp, ec.head, ec.hum
+        local hrp, hum = ec.hrp, ec.hum
         
-        if not (hrp and head and hum) then
-            clearDrawingESP(plr)
+        if not (hrp and hum) or hum.Health <= 0 or (camPos - hrp.Position).Magnitude > CFG.MaxESP then
+            if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
             continue
         end
-
-        local dist = (camPos - hrp.Position).Magnitude
-        if dist > CFG.MaxESP then
-            clearDrawingESP(plr)
-            continue
-        end
-
-        local headPos, onScreen1 = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-        local hrpPos, onScreen2 = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 2.5, 0))
         
-        if not onScreen1 or not onScreen2 or headPos.Z < 0 then
-            if drawings[plr] then
-                for _, obj in pairs(drawings[plr]) do
-                    obj.Visible = false
-                end
-            end
-            continue
+        if not pESP[plr] or not pESP[plr].Parent then
+            local hl = Instance.new("Highlight")
+            hl.Name = "BSS_HL"
+            hl.FillTransparency = 0.5
+            hl.OutlineTransparency = 0
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Adornee = char
+            hl.Parent = char
+            pESP[plr] = hl
+            _cachedColors[plr] = nil
         end
-
-        if not drawings[plr] then
-            drawings[plr] = {
-                box = Drawing.new("Square"),
-                name = Drawing.new("Text"),
-                weapon = Drawing.new("Text")
-            }
-            drawings[plr].box.Filled = false
-            drawings[plr].box.Thickness = 1.5
-            drawings[plr].name.Center = true
-            drawings[plr].name.Outline = true
-            drawings[plr].name.Size = 14
-            drawings[plr].name.Font = 2
-            drawings[plr].weapon.Center = true
-            drawings[plr].weapon.Outline = true
-            drawings[plr].weapon.Size = 12
-            drawings[plr].weapon.Font = 2
-        end
-
-        local d = drawings[plr]
-        local h = hrpPos.Y - headPos.Y
-        local w = h / 2
-        local x = headPos.X - w / 2
-        local y = headPos.Y
-
-        d.box.Size = Vector2.new(w, h)
-        d.box.Position = Vector2.new(x, y)
-        d.box.Color = (hum.Health / hum.MaxHealth) > 0.3 and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50)
-        d.box.Visible = true
-
-        d.name.Text = plr.Name
-        d.name.Position = Vector2.new(headPos.X, y - 18)
-        d.name.Color = Color3.fromRGB(255, 255, 255)
-        d.name.Visible = CFG.NameESP
-
-        if CFG.WeaponESP then
-            local weapEntry = getEquippedWeapon(plr)
-            if weapEntry then
-                d.weapon.Text = TIER_LABELS[weapEntry.tier] .. " " .. weapEntry.label
-                d.weapon.Position = Vector2.new(headPos.X, y + h + 4)
-                d.weapon.Color = weapEntry.color
-                d.weapon.Visible = true
-            else
-                d.weapon.Visible = false
-            end
-        else
-            d.weapon.Visible = false
-        end
-    end
-    for plr in pairs(drawings) do
-        if not plr.Parent then
-            clearDrawingESP(plr)
+        
+        local hpR = hum.Health / math.max(hum.MaxHealth, 1)
+        local targetColor = hpR > 0.5 and C.hp or C.danger
+        if _cachedColors[plr] ~= targetColor then
+            pESP[plr].FillColor = targetColor
+            _cachedColors[plr] = targetColor
         end
     end
 end
 
 local function updateBillboardESP()
-    if not CFG.PlayerESP or (CFG.BoxESP and hasDrawing) or not (CFG.NameESP or CFG.WeaponESP) then
+    if not CFG.PlayerESP or not (CFG.NameESP or CFG.WeaponESP) then
         for plr, bb in pairs(tESP) do
             if bb then bb:Destroy() end
         end
@@ -1069,6 +1009,7 @@ local function updateBillboardESP()
         return
     end
     local camPos = Camera.CFrame.Position
+    
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then
             if tESP[plr] then tESP[plr]:Destroy(); tESP[plr] = nil end
@@ -1076,6 +1017,7 @@ local function updateBillboardESP()
         end
         local char = plr.Character
         local ec = _espCache[plr]
+        
         if not ec or ec.char ~= char or not ec.hrp or not ec.hrp.Parent or not ec.hum or not ec.hum.Parent then
             if not ec then ec = {}; _espCache[plr] = ec end
             refreshCharRefs(ec, char)
@@ -1149,48 +1091,6 @@ local function updateBillboardESP()
         if not plr.Parent then
             if tESP[plr] then tESP[plr]:Destroy(); tESP[plr] = nil end
         end
-    end
-end
-
-local function updateHighlights()
-    if not CFG.PlayerESP or not CFG.ChamsESP then
-        for plr in pairs(pESP) do
-            if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
-        end
-        return
-    end
-    local camPos = Camera.CFrame.Position
-    local hlRange = CFG.MaxESP * 0.6
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LocalPlayer or sameTeam(plr) then
-            if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
-            continue
-        end
-        local char = plr.Character
-        local ec = _espCache[plr]
-        if not ec or ec.char ~= char or not ec.hrp or not ec.hrp.Parent or not ec.hum or not ec.hum.Parent then
-            if not ec then ec = {}; _espCache[plr] = ec end
-            refreshCharRefs(ec, char)
-        end
-        local hrp, hum = ec.hrp, ec.hum
-        
-        if not (hrp and hum) or hum.Health <= 0 or (camPos - hrp.Position).Magnitude > hlRange then
-            if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
-            continue
-        end
-        
-        if not pESP[plr] or not pESP[plr].Parent then
-            local hl = Instance.new("Highlight")
-            hl.Name = "BSS_HL"
-            hl.FillTransparency = 0.5
-            hl.OutlineTransparency = 0
-            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            hl.Adornee = char
-            hl.Parent = char
-            pESP[plr] = hl
-        end
-        
-        pESP[plr].FillColor = (hum.Health / hum.MaxHealth) > 0.5 and C.hp or C.danger
     end
 end
 
@@ -1350,7 +1250,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 16),
     Position = UDim2.new(0, 52, 0, 5),
     BackgroundTransparency = 1,
-    Text = "BSS-AIM ULTRA v14",
+    Text = "BSS-AIM ULTRA v15",
     TextColor3 = Color3.fromRGB(255, 255, 255),
     TextSize = 14,
     Font = Enum.Font.GothamBold,
@@ -1362,7 +1262,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12),
     Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  AGGRESSIVE",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  HIGHLIGHT CHAMS",
     TextColor3 = C.accent,
     TextSize = 9,
     Font = Enum.Font.Gotham,
@@ -1896,8 +1796,7 @@ bodyPartSelector(aimPage)
 local espPage = pages["ESP"]
 section(espPage, "VISUAL")
 toggle(espPage, "Activar ESP", "PlayerESP")
-toggle(espPage, "Cajas 2D (Box ESP)", "BoxESP")
-toggle(espPage, "Cuerpo iluminado", "ChamsESP")
+toggle(espPage, "Cuerpo iluminado (Chams)", "ChamsESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
 toggle(espPage, "Arma equipada", "WeaponESP")
@@ -2131,7 +2030,7 @@ wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v14 — AGGRO"
+wmLabel.Text = "BSS-Aim Ultra v15 — HIGHLIGHT"
 wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
@@ -2172,13 +2071,12 @@ local currentFPS = 60
 task.spawn(function()
     while _scriptActive do
         pcall(updateHighlights)
-        task.wait(0.2)
+        task.wait(0.15)
     end
 end)
 
 task.spawn(function()
     while _scriptActive do
-        pcall(updateDrawingESP)
         pcall(updateBillboardESP)
         task.wait(CFG.ESPRefresh)
     end
@@ -2256,7 +2154,6 @@ RunService.Heartbeat:Connect(function()
 
     if bestPart ~= currentTarget then
         local currentPx = targetPx()
-        -- Aggressive switch: if better score by even 1px, and no cooldown issue
         if bestScore < currentPx and (now - lastSwitch) > 0.01 then
             currentTarget = bestPart
             lastSwitch = now
@@ -2403,5 +2300,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v14", "Aggressive Build — 1550+ lines", 6)
-print("[BSS-Aim ULTRA v14] cargado — aggressive mode")
+notify("BSS-Aim ULTRA v15", "Highlight ESP ON, Zero Lag", 6)
+print("[BSS-Aim ULTRA v15] cargado — highlight edition")

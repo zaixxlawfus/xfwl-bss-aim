@@ -211,6 +211,8 @@ local DEFAULTS = {
     WatermarkOn=true, StatsOn=true,
     HideName=false, HideNameTxt="...", HideBoard=false,
     AutoSave=true, AutoSaveInterval=10,
+    -- NUEVO: velocidad de interpolación de cámara (0.05 = suave, 1 = snap duro)
+    LockSmooth=0.25,
 }
 
 local CFG = {}
@@ -273,6 +275,9 @@ local lastHPSnap = {}
 local _inCar     = false
 local lastMouseMove = 0
 local manualAimOverride = false
+
+-- FIX: flag que rastrea si la cámara está en modo Scriptable por el lock
+local _camScriptableByLock = false
 
 local _lChar, _lHum, _lHRP = nil, nil, nil
 local function refreshLocal()
@@ -386,6 +391,24 @@ local function targetGone()
 end
 
 -- ============================================================================
+-- RESTORE CAMERA — helper centralizado
+-- ============================================================================
+local function restoreCamera()
+    if _camScriptableByLock then
+        _camScriptableByLock = false
+        Camera.CameraType = Enum.CameraType.Custom
+        -- Restaurar el subject para que el personaje siga siendo trackeado
+        pcall(function()
+            if _lHum then
+                Camera.CameraSubject = _lHum
+            elseif _origCamSubject then
+                Camera.CameraSubject = _origCamSubject
+            end
+        end)
+    end
+end
+
+-- ============================================================================
 -- INPUT
 -- ============================================================================
 UserInputService.InputChanged:Connect(function(input)
@@ -399,19 +422,25 @@ UserInputService.InputBegan:Connect(function(i,gp)
     if i.KeyCode==CFG.HoldKey then aimOn=true end
     if i.UserInputType==Enum.UserInputType.MouseButton1 or i.KeyCode==Enum.KeyCode.ButtonR2 then
         isFiring=true
-        if CFG.NoRecoil and Camera.CameraType~=Enum.CameraType.Scriptable then
+        -- FIX: solo guardar rotación si el lock NO está activo (evita conflicto)
+        if CFG.NoRecoil and not (CFG.CameraLock and aimOn and curTarget) then
             savedRot=Camera.CFrame.Rotation
         end
     end
     if i.KeyCode==CFG.PanicKey then
         aimOn=false; CFG.Enabled=false
+        restoreCamera()
         toast("PANIC","Todo desactivado",3)
     end
 end)
 
 UserInputService.InputEnded:Connect(function(i,gp)
     if gp then return end
-    if i.KeyCode==CFG.HoldKey then aimOn=false end
+    if i.KeyCode==CFG.HoldKey then
+        aimOn=false
+        restoreCamera()   -- FIX: restaurar al soltar la tecla
+        curTarget=nil; curPlr=nil
+    end
     if i.UserInputType==Enum.UserInputType.MouseButton1 or i.KeyCode==Enum.KeyCode.ButtonR2 then
         isFiring=false; savedRot=nil
     end
@@ -565,7 +594,10 @@ if IS_MOBILE then
     end)
     aimBtn.InputEnded:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            aimOn=false; abStk.Color=C.acc; aimBtn.TextColor3=C.acc
+            aimOn=false
+            restoreCamera()   -- FIX: mobile también restaura
+            curTarget=nil; curPlr=nil
+            abStk.Color=C.acc; aimBtn.TextColor3=C.acc
         end
     end)
 end
@@ -955,6 +987,8 @@ tog(ap,"Camera Lock (seguir target)","CameraLock")
 tog(ap,"No Recoil","NoRecoil")
 sld(ap,"FOV","FOV",30,400,false,function(v) CFG.FOVRadius=v end)
 sld(ap,"Distancia máx","MaxDist",100,1500,false)
+-- FIX: slider para suavidad del lock (nuevo parámetro)
+sld(ap,"Lock Smooth","LockSmooth",0.05,1,true)
 kbRow(ap,"Hold aim (teclado)","HoldKey")
 sec(ap,"FILTROS")
 tog(ap,"Wall check","WallCheck")
@@ -1019,10 +1053,10 @@ actBtn(sp,"Resetear config",C.dng,function()
 end)
 actBtn(sp,"Reiniciar script",Color3.fromRGB(80,20,20),function()
     disableSilent(); restoreAllHB()
+    restoreCamera()
     if _origName then pcall(function() LP.DisplayName=_origName end) end
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
     _alive=false
-    if Camera.CameraType==Enum.CameraType.Scriptable then Camera.CameraType=_origCamType end
     fovSG:Destroy(); sg:Destroy()
     for plr in pairs(_espHL) do clearEspPlayer(plr) end
     getgenv().BSS_Aim_Loaded=false
@@ -1077,10 +1111,10 @@ mini.MouseButton1Click:Connect(openPanel)
 minBtn.MouseButton1Click:Connect(closePanel)
 closeBtn.MouseButton1Click:Connect(function()
     disableSilent(); restoreAllHB()
+    restoreCamera()
     if _origName then pcall(function() LP.DisplayName=_origName end) end
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
     _alive=false
-    if Camera.CameraType==Enum.CameraType.Scriptable then Camera.CameraType=_origCamType end
     fovSG:Destroy(); sg:Destroy()
     for plr in pairs(_espHL) do clearEspPlayer(plr) end
     getgenv().BSS_Aim_Loaded=false
@@ -1133,7 +1167,11 @@ RunService.Heartbeat:Connect(function()
     if not _alive then return end
     manualAimOverride = (tick() - lastMouseMove) < 0.15
     if manualAimOverride then curTarget=nil; curPlr=nil; return end
-    if not (CFG.Enabled and aimOn) then curTarget=nil; curPlr=nil; return end
+    if not (CFG.Enabled and aimOn) then
+        -- FIX: limpiar target cuando aim se desactiva
+        if curTarget then curTarget=nil; curPlr=nil end
+        return
+    end
     local now=tick()
     if now-_scanT < 0.016 then return end
     _scanT=now
@@ -1152,9 +1190,13 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================================
--- MAIN LOOP
+-- MAIN LOOP — CAMERA LOCK FIX COMPLETO
 -- ============================================================================
 pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+
+-- FIX: CFrame del frame anterior para interpolación suave sin jitter
+local _prevLockCF = nil
+
 RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Value+1, function(dt)
     if not _alive then return end
 
@@ -1177,42 +1219,63 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
 
     if lockActive then
         local camPos = Camera.CFrame.Position
-        local ok,tPos = pcall(function() return curTarget.Position end)
+        local ok, tPos = pcall(function() return curTarget.Position end)
         if ok and tPos then
-            if _inCar then
-                if Camera.CameraType~=Enum.CameraType.Scriptable then
-                    _origCamType=Camera.CameraType
-                    _origCamSubject=Camera.CameraSubject
-                    Camera.CameraType=Enum.CameraType.Scriptable
-                end
-                Camera.CFrame = CFrame.new(camPos, tPos)
-            else
-                -- FIX PRO: Usar Custom y rotar la cámara para no perder el tracking del jugador
-                if Camera.CameraType~=Enum.CameraType.Custom then
-                    Camera.CameraType=Enum.CameraType.Custom
-                end
-                -- Cálculo matemático para evitar el Gimbal Lock (spin) cuando el target está muy arriba o muy abajo
-                local lookDir = (tPos - camPos).Unit
-                local upVec = Vector3.new(0, 1, 0)
-                if math.abs(lookDir.Y) > 0.99 then
-                    upVec = Vector3.new(0, 0, 1) -- Eje de emergencia
-                end
-                Camera.CFrame = CFrame.lookAt(camPos, tPos, upVec)
+
+            -- FIX CORE: usar Scriptable siempre que el lock esté activo
+            -- Esto evita que el motor de Roblox pisotee el CFrame que ponemos
+            if not _camScriptableByLock then
+                _origCamType    = Camera.CameraType
+                _origCamSubject = Camera.CameraSubject
+                Camera.CameraType = Enum.CameraType.Scriptable
+                _camScriptableByLock = true
+                _prevLockCF = nil  -- reset para evitar lerp desde CF viejo
             end
+
+            -- FIX GIMBAL: construir la rotación correcta sin el flip de upVec
+            local lookDir = (tPos - camPos)
+            if lookDir.Magnitude < 0.01 then return end
+            lookDir = lookDir.Unit
+
+            -- Si el target está casi perfectamente arriba/abajo, girar el upVec
+            -- usando la orientación actual de la cámara como referencia
+            -- (no un eje fijo que introduce salto)
+            local upVec
+            if math.abs(lookDir.Y) > 0.98 then
+                -- usar el rightVector actual de la cámara para derivar un up estable
+                local camRight = Camera.CFrame.RightVector
+                upVec = camRight:Cross(lookDir)
+                if upVec.Magnitude < 0.001 then upVec = Vector3.new(0,0,1) end
+                upVec = upVec.Unit
+            else
+                upVec = Vector3.new(0,1,0)
+            end
+
+            local targetCF = CFrame.lookAt(camPos, tPos, upVec)
+
+            -- FIX SMOOTH: lerp entre frame anterior y target para evitar el stutter/deslizamiento
+            if _prevLockCF then
+                local alpha = math.clamp(CFG.LockSmooth + (dt * 60 * CFG.LockSmooth), 0, 1)
+                Camera.CFrame = _prevLockCF:Lerp(targetCF, alpha)
+            else
+                Camera.CFrame = targetCF
+            end
+            _prevLockCF = Camera.CFrame
+
         else
+            -- target desapareció
             curTarget=nil; curPlr=nil
+            restoreCamera()
+            _prevLockCF = nil
         end
     else
-        if _inCar then
-            if Camera.CameraType==Enum.CameraType.Scriptable and _origCamSubject then
-                pcall(function() Camera.CameraSubject=_origCamSubject end)
-                Camera.CameraType=_origCamType or Enum.CameraType.Custom
-            end
-        else
-            if Camera.CameraType==Enum.CameraType.Scriptable then
-                Camera.CameraType=Enum.CameraType.Custom
-            end
+        -- Lock inactivo: restaurar cámara si estaba en Scriptable por nosotros
+        if _camScriptableByLock then
+            restoreCamera()
+            _prevLockCF = nil
         end
+
+        -- No Recoil solo cuando el lock NO está activo
         if CFG.NoRecoil and isFiring and savedRot and not _inCar then
             Camera.CFrame=CFrame.new(Camera.CFrame.Position)*savedRot
         end
@@ -1233,5 +1296,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-toast("BSS-Aim ULTRA v15.0","Pro Camera Fix activo",5)
-print("[BSS-Aim ULTRA v15.0] OK | Custom Camera + UpVector dinámico")
+toast("BSS-Aim ULTRA v15.0","Camera Lock fix activo — Scriptable + Lerp",5)
+print("[BSS-Aim ULTRA v15.0] OK | Scriptable lock + upVec dinámico + smooth lerp")

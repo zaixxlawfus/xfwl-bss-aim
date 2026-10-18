@@ -1,5 +1,5 @@
 -- ============================================================================
--- BSS-Aim ULTRA v14.2 — MERGED EDITION (UI Force Visible)
+-- BSS-Aim ULTRA v14.3 — FIX CAMERA SPIN + HARD HEAD SNAP
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -155,7 +155,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CFG_FOLDER  = "BSS_Ultra_v14"
 local CFG_FILE    = CFG_FOLDER.."/config.json"
 local HAS_IO      = (writefile and readfile and isfile and makefolder) and true or false
-local CFG_VER     = 22 -- Forzando reset
+local CFG_VER     = 23
 
 local function mkFolder()
     if not HAS_IO then return end
@@ -201,7 +201,6 @@ local DEFAULTS = {
     Ver=CFG_VER, Enabled=true,
     HoldKey=Enum.KeyCode.E, PanelKey=Enum.KeyCode.L, CloseKey=Enum.KeyCode.M, PanicKey=Enum.KeyCode.Delete,
     FOV=130, MaxDist=500, TargetPart="Head", Priority="fov",
-    Smoothness=0,
     TeamCheck=false, WallCheck=true, DrawFOV=true, CameraLock=true,
     SilentAim=true, NoRecoil=true,
     PlayerESP=true, ChamsESP=true, NameESP=true, HealthESP=true, WeaponESP=true,
@@ -237,7 +236,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- COLORS & UI HELPER
+-- COLORS & UI
 -- ============================================================================
 local C = {
     bg    = Color3.fromRGB(6,6,8),      bg2   = Color3.fromRGB(12,12,16),
@@ -250,7 +249,6 @@ local C = {
     gold  = Color3.fromRGB(255,200,50),
 }
 
--- FORZAMOS PlayerGui
 local function gui()
     return LP:WaitForChild("PlayerGui")
 end
@@ -334,7 +332,7 @@ local function exitCarAim()
 end
 
 -- ============================================================================
--- HIDE NAME (SIN CoreGui, para que no tire error rojo)
+-- HIDE NAME
 -- ============================================================================
 local _origName = nil
 local function applyHideName()
@@ -344,7 +342,6 @@ local function applyHideName()
         if not _origName then _origName = LP.DisplayName end
         LP.DisplayName = CFG.HideName and (CFG.HideNameTxt or "...") or _origName
     end)
-    -- Se eliminó StarterGui:SetCoreGuiEnabled para que la consola no tire error nil value.
 end
 
 -- ============================================================================
@@ -836,7 +833,7 @@ rnd(logoF,10); stk(logoF,Color3.fromRGB(255,255,255),1.5)
 mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.72,.72),BackgroundTransparency=1,Image=ICON,ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=logoF})
 
 mk("TextLabel",{Size=UDim2.new(0,200,0,18),Position=UDim2.new(0,52,0,4),BackgroundTransparency=1,Text="BSS-AIM ULTRA",TextColor3=Color3.fromRGB(255,255,255),TextSize=15,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
-mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14.2 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
+mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14.3 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
 
 local function hdrBtn(txt,xOff)
     local b=mk("TextButton",{Size=UDim2.fromOffset(28,28),Position=UDim2.new(1,xOff,0.5,-14),BackgroundColor3=C.bg3,BorderSizePixel=0,Text=txt,TextColor3=C.acc,TextSize=14,Font=Enum.Font.GothamBold,AutoButtonColor=false,Active=true,Parent=hdr,ZIndex=2})
@@ -996,7 +993,6 @@ tog(ap,"Activar script","Enabled")
 tog(ap,"Camera Lock (seguir target)","CameraLock")
 tog(ap,"No Recoil","NoRecoil")
 sld(ap,"FOV","FOV",30,400,false,function(v) CFG.FOVRadius=v end)
-sld(ap,"Smoothness (0=snap, 0.9=suave)","Smoothness",0,0.95,true)
 sld(ap,"Distancia máx","MaxDist",100,1500,false)
 kbRow(ap,"Hold aim (teclado)","HoldKey")
 sec(ap,"FILTROS")
@@ -1141,7 +1137,7 @@ local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,IgnoreGuiInset=tru
 
 local wm=mk("Frame",{Size=UDim2.fromOffset(230,26),Position=UDim2.new(0,18,0,18),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(wm,8); stk(wm,C.acc,1)
-mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14.2",Parent=wm})
+mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14.3",Parent=wm})
 
 local stats=mk("Frame",{Size=UDim2.fromOffset(175,82),Position=UDim2.new(1,-193,0,52),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(stats,8); stk(stats,C.acc2,1)
@@ -1228,20 +1224,20 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
                     _origCamSubject=Camera.CameraSubject
                     Camera.CameraType=Enum.CameraType.Scriptable
                 end
-                Camera.CFrame = CFrame.lookAt(camPos, tPos)
+                Camera.CFrame = CFrame.new(camPos, tPos) * CFrame.Angles(0,0,0)
             else
-                if CFG.Smoothness <= 0.01 then
-                    if Camera.CameraType~=Enum.CameraType.Scriptable then
-                        Camera.CameraType=Enum.CameraType.Scriptable
-                    end
-                    Camera.CFrame = CFrame.lookAt(camPos, tPos)
+                if Camera.CameraType~=Enum.CameraType.Scriptable then
+                    _origCamType=Camera.CameraType
+                    _origCamSubject=Camera.CameraSubject
+                    Camera.CameraType=Enum.CameraType.Scriptable
+                end
+                -- FIX DEL SPIN: CFrame.new + UpVector fijo
+                local dir = (tPos - camPos).Unit
+                if math.abs(dir.Y) < 0.99 then
+                    Camera.CFrame = CFrame.new(camPos, tPos)
                 else
-                    if Camera.CameraType==Enum.CameraType.Scriptable then
-                        Camera.CameraType=_origCamType
-                    end
-                    local desired = CFrame.lookAt(camPos, tPos)
-                    local alpha = 1-(CFG.Smoothness)^(dt*60)
-                    Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha,0,1))
+                    -- Si está justo arriba/abajo, forzamos un up vector para que no voltee
+                    Camera.CFrame = CFrame.lookAt(camPos, tPos, Vector3.new(0, 0, 1))
                 end
             end
         else
@@ -1278,5 +1274,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-toast("BSS-Aim ULTRA v14.2","Cargado y visible",5)
-print("[BSS-Aim ULTRA v14.2] OK | UI parented to PlayerGui")
+toast("BSS-Aim ULTRA v14.3","Fix Camera Spin + Head Snap",5)
+print("[BSS-Aim ULTRA v14.3] OK | CFrame.new + UpVector fix")

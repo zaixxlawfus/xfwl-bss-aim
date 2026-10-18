@@ -33,6 +33,7 @@ pcall(function()
 end)
 
 getgenv().BSS_Aim_Loaded = true
+local _scriptActive = true
 
 local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 local IS_PC = not IS_MOBILE
@@ -128,6 +129,22 @@ local function getEquippedWeapon(plr)
     return best, bestTexture
 end
 
+local function hookWeaponCache(plr)
+    local function connect(container)
+        if not container then return end
+        container.ChildAdded:Connect(function(c) if c:IsA("Tool") then weaponCache[plr.UserId] = nil end end)
+        container.ChildRemoved:Connect(function(c) if c:IsA("Tool") then weaponCache[plr.UserId] = nil end end)
+    end
+    if plr:FindFirstChild("Backpack") then connect(plr.Backpack) end
+    plr.ChildAdded:Connect(function(c) if c.Name == "Backpack" then connect(c) end end)
+    if plr.Character then connect(plr.Character) end
+    plr.CharacterAdded:Connect(function(char) weaponCache[plr.UserId] = nil; connect(char) end)
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then hookWeaponCache(plr) end
+end
+Players.PlayerAdded:Connect(function(plr) if plr ~= LocalPlayer then hookWeaponCache(plr) end end)
 Players.PlayerRemoving:Connect(function(plr) weaponCache[plr.UserId] = nil end)
 
 -- ============================================================================
@@ -298,7 +315,7 @@ local function doSave()
     if saveConfigTo(CONFIG_FILE, CFG) then dirtyFlag = false; lastAutoSave = tick() end
 end
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
+    while _scriptActive do
         if CFG.AutoSaveEnabled and dirtyFlag and (tick() - lastAutoSave) >= (CFG.AutoSaveInterval or 10) then doSave() end
         task.wait(1)
     end
@@ -348,18 +365,34 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- CACHE DE ESCRITURA — mata lag de property writes redundantes
+-- CACHE GLOBAL
 -- ============================================================================
 local _uiCache = {
     hideName = nil, hideLeaderboard = nil,
     watermarkVisible = nil, statsVisible = nil,
     fovVisible = nil, fovSize = nil, fovColor = nil,
 }
-local _hitboxCache = setmetatable({}, {__mode = "k"})
+local _hitboxOriginal = setmetatable({}, {__mode = "k"})
+local _hitboxApplied  = setmetatable({}, {__mode = "k"})
 local _espCache = setmetatable({}, {__mode = "k"})
 
+local _vpCenter = Vector2.new(0, 0)
+local function refreshVpCenter()
+    local vp = Camera.ViewportSize
+    _vpCenter = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+end
+refreshVpCenter()
+Camera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshVpCenter)
+
+local _droppedItemsFolder = nil
+local function getDroppedFolder()
+    if _droppedItemsFolder and _droppedItemsFolder.Parent then return _droppedItemsFolder end
+    _droppedItemsFolder = Workspace:FindFirstChild("DroppedItems")
+    return _droppedItemsFolder
+end
+
 -- ============================================================================
--- CAR CAMERA STATE — snap directo, restauro CameraSubject
+-- CAR CAMERA STATE
 -- ============================================================================
 local _carAimActive = false
 local _savedCamType = nil
@@ -478,21 +511,23 @@ local function visible(target, char)
 end
 
 local function getTargetWithScore()
-    local candidates = {}; local center = Camera.ViewportSize * 0.5
+    local candidates = {}
+    local camPos = Camera.CFrame.Position
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then continue end
         local char = plr.Character
         local part = char:FindFirstChild(CFG.TargetPart) or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
         if not part then continue end
-        local wp = part.Position; local d3 = (Camera.CFrame.Position - wp).Magnitude
+        local wp = part.Position; local d3 = (camPos - wp).Magnitude
         if d3 > CFG.MaxDistance then continue end
         local sp, on = Camera:WorldToViewportPoint(wp); if not on then continue end
-        local px = (Vector2.new(sp.X, sp.Y) - center).Magnitude; if px > CFG.FOVRadius then continue end
+        local px = (Vector2.new(sp.X, sp.Y) - _vpCenter).Magnitude; if px > CFG.FOVRadius then continue end
         local score = (CFG.Priority == "dist") and d3 or px
         table.insert(candidates, {plr = plr, part = part, score = score})
     end
     table.sort(candidates, function(a, b) return a.score < b.score end)
-    for i = 1, math.min(3, #candidates) do
+    -- solo valida los 2 mejores, no los 3
+    for i = 1, math.min(2, #candidates) do
         local c = candidates[i]
         if not CFG.WallCheck or visible(c.part, c.plr.Character) then return c.plr, c.part, c.score end
     end
@@ -508,9 +543,9 @@ local function targetDead()
 end
 local function targetPx()
     if not currentTarget then return math.huge end
-    local center = Camera.ViewportSize * 0.5; local sp, on = Camera:WorldToViewportPoint(currentTarget.Position)
+    local sp, on = Camera:WorldToViewportPoint(currentTarget.Position)
     if not on then return math.huge end
-    return (Vector2.new(sp.X, sp.Y) - center).Magnitude
+    return (Vector2.new(sp.X, sp.Y) - _vpCenter).Magnitude
 end
 
 -- ============================================================================
@@ -537,26 +572,34 @@ UserInputService.InputEnded:Connect(function(i, gp)
 end)
 
 -- ============================================================================
--- SILENT AIM
+-- SILENT AIM — hook dinámico (solo instalado mientras aim está activo)
 -- ============================================================================
-if IS_PC and CFG.SilentAim then
-    local Mouse = LocalPlayer:GetMouse(); local mt = nil
-    pcall(function() if getrawmetatable then mt = getrawmetatable(game) end end)
-    if mt and newcclosure and setreadonly then
-        local oldIndex = mt.__index; local oldNamecall = mt.__namecall
-        pcall(function()
-            setreadonly(mt, false)
-            mt.__index = newcclosure(function(self, key)
-                if self == Mouse and currentTarget and CFG.Enabled and aimOn then
-                    if key == "Hit" then return CFrame.new(Camera.CFrame.Position, currentTarget.Position)
-                    elseif key == "Target" then return currentTarget
-                    elseif key == "UnitRay" then return Ray.new(Camera.CFrame.Position, currentTarget.Position - Camera.CFrame.Position) end
-                end
-                return oldIndex(self, key)
-            end)
-            mt.__namecall = newcclosure(function(self, ...)
-                local method = getnamecallmethod and getnamecallmethod(); local args = {...}
-                if method == "FireServer" and currentTarget and CFG.Enabled and aimOn then
+local Mouse = nil
+local mt = nil
+pcall(function() Mouse = LocalPlayer:GetMouse(); if getrawmetatable then mt = getrawmetatable(game) end end)
+
+local silentHookInstalled = false
+local oldIndex, oldNamecall = nil, nil
+if mt then oldIndex = mt.__index; oldNamecall = mt.__namecall end
+
+local function installSilentHook()
+    if silentHookInstalled or not mt or not newcclosure or not setreadonly then return end
+    silentHookInstalled = true
+    pcall(function()
+        setreadonly(mt, false)
+        mt.__index = newcclosure(function(self, key)
+            if self == Mouse and currentTarget then
+                if key == "Hit" then return CFrame.new(Camera.CFrame.Position, currentTarget.Position)
+                elseif key == "Target" then return currentTarget
+                elseif key == "UnitRay" then return Ray.new(Camera.CFrame.Position, currentTarget.Position - Camera.CFrame.Position) end
+            end
+            return oldIndex(self, key)
+        end)
+        mt.__namecall = newcclosure(function(self, ...)
+            if currentTarget then
+                local method = getnamecallmethod and getnamecallmethod()
+                if method == "FireServer" then
+                    local args = {...}
                     if #args >= 1 then
                         local first = args[1]
                         if typeof(first) == "Vector3" then
@@ -568,40 +611,118 @@ if IS_PC and CFG.SilentAim then
                     end
                     return oldNamecall(self, table.unpack(args))
                 end
-                return oldNamecall(self, ...)
-            end)
-            setreadonly(mt, true)
+            end
+            return oldNamecall(self, ...)
         end)
-    end
+        setreadonly(mt, true)
+    end)
+end
+
+local function uninstallSilentHook()
+    if not silentHookInstalled or not mt then return end
+    silentHookInstalled = false
+    pcall(function()
+        setreadonly(mt, false)
+        mt.__index = oldIndex
+        mt.__namecall = oldNamecall
+        setreadonly(mt, true)
+    end)
 end
 
 -- ============================================================================
 -- HITBOX EXPANDER
 -- ============================================================================
 local function applyHitbox(char)
-    if not CFG.HitboxExpander then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not CFG.HitboxExpander or not char then return end
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
     local head = char:FindFirstChild("Head")
+    if not hrp and not head then return end
+
+    local orig = _hitboxOriginal[char]
+    if not orig then
+        orig = {
+            hrpSize    = hrp and hrp.Size,
+            hrpT       = hrp and hrp.Transparency,
+            hrpCollide = hrp and hrp.CanCollide,
+            hrpMass    = hrp and hrp.Massless,
+            hrpTouch   = hrp and hrp.CanTouch,
+            headSize   = head and head.Size,
+            headT      = head and head.Transparency,
+            headCollide= head and head.CanCollide,
+            headMass   = head and head.Massless,
+            headTouch  = head and head.CanTouch,
+        }
+        _hitboxOriginal[char] = orig
+    end
+
     local wantSize = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize)
-    local wantT = CFG.HitboxTransparency
-    local cache = _hitboxCache[char]
-    if not cache then cache = {}; _hitboxCache[char] = cache end
+    local wantT    = CFG.HitboxTransparency
+    local cache = _hitboxApplied[char]
+    if not cache then cache = {}; _hitboxApplied[char] = cache end
+
     if hrp then
-        if cache.hrpSize ~= wantSize then hrp.Size = wantSize; cache.hrpSize = wantSize end
-        if cache.hrpT ~= wantT then hrp.Transparency = wantT; cache.hrpT = wantT end
         if cache.hrpCollide ~= false then hrp.CanCollide = false; cache.hrpCollide = false end
-        if cache.hrpMass ~= true then hrp.Massless = true; cache.hrpMass = true end
+        if cache.hrpMass ~= true     then hrp.Massless   = true;  cache.hrpMass    = true  end
+        if cache.hrpTouch ~= false   then hrp.CanTouch   = false; cache.hrpTouch   = false end
+        if cache.hrpSize ~= wantSize then hrp.Size       = wantSize; cache.hrpSize = wantSize end
+        if cache.hrpT    ~= wantT    then hrp.Transparency = wantT; cache.hrpT     = wantT end
     end
     if head then
-        if cache.headSize ~= wantSize then head.Size = wantSize; cache.headSize = wantSize end
-        if cache.headT ~= wantT then head.Transparency = wantT; cache.headT = wantT end
         if cache.headCollide ~= false then head.CanCollide = false; cache.headCollide = false end
-        if cache.headMass ~= true then head.Massless = true; cache.headMass = true end
+        if cache.headMass ~= true     then head.Massless   = true;  cache.headMass    = true  end
+        if cache.headTouch ~= false   then head.CanTouch   = false; cache.headTouch   = false end
+        if cache.headSize ~= wantSize then head.Size       = wantSize; cache.headSize = wantSize end
+        if cache.headT    ~= wantT    then head.Transparency = wantT; cache.headT     = wantT end
     end
 end
 
+local function restoreHitbox(char)
+    if not char then return end
+    local orig = _hitboxOriginal[char]
+    if not orig then return end
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
+    local head = char:FindFirstChild("Head")
+    if hrp then
+        if orig.hrpCollide ~= nil then hrp.CanCollide = orig.hrpCollide end
+        if orig.hrpMass    ~= nil then hrp.Massless   = orig.hrpMass end
+        if orig.hrpTouch   ~= nil then hrp.CanTouch   = orig.hrpTouch end
+        if orig.hrpSize    then hrp.Size = orig.hrpSize end
+        if orig.hrpT       ~= nil then hrp.Transparency = orig.hrpT end
+    end
+    if head then
+        if orig.headCollide ~= nil then head.CanCollide = orig.headCollide end
+        if orig.headMass    ~= nil then head.Massless   = orig.headMass end
+        if orig.headTouch   ~= nil then head.CanTouch   = orig.headTouch end
+        if orig.headSize    then head.Size = orig.headSize end
+        if orig.headT       ~= nil then head.Transparency = orig.headT end
+    end
+    _hitboxOriginal[char] = nil
+    _hitboxApplied[char]  = nil
+end
+
+local function restoreAllHitboxes()
+    for char in pairs(_hitboxOriginal) do restoreHitbox(char) end
+end
+
+local function reapplyAllHitboxes()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then applyHitbox(p.Character) end
+    end
+end
+
+local function invalidateHitboxSizeCache()
+    for _, c in pairs(_hitboxApplied) do c.hrpSize = nil; c.headSize = nil end
+end
+
+local function invalidateHitboxTransparencyCache()
+    for _, c in pairs(_hitboxApplied) do c.hrpT = nil; c.headT = nil end
+end
+
 Players.PlayerAdded:Connect(function(plr)
-    plr.CharacterAdded:Connect(function(char) task.wait(0.5); applyHitbox(char) end)
+    plr.CharacterAdded:Connect(function(char)
+        task.wait(0.3)
+        if CFG.HitboxExpander then applyHitbox(char) end
+    end)
 end)
 
 -- ============================================================================
@@ -619,6 +740,7 @@ end
 local _playerCache = {}
 local function updateESP()
     _playerCache = Players:GetPlayers()
+    local camPos = Camera.CFrame.Position
     for _, plr in ipairs(_playerCache) do
         if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then clearESP(plr); continue end
         local char = plr.Character
@@ -627,7 +749,7 @@ local function updateESP()
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         if not (hrp and head and hum) then clearESP(plr); continue end
 
-        local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+        local dist = (camPos - hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearESP(plr); continue end
 
         local ec = _espCache[plr]
@@ -700,13 +822,18 @@ local function updateESP()
                 weapNameLbl.Text = ""; weapNameLbl.Parent = weapFrame
 
                 tESP[plr] = bb
+                -- cache de referencias de hijos (evita FindFirstChild cada tick)
+                ec.nameLbl = nameLbl
+                ec.hpLbl = hpLbl
+                ec.weapFrame = weapFrame
+                ec.weapImg = weapImg
+                ec.weapNameLbl = weapNameLbl
                 ec.distBucket = nil; ec.nameText = nil; ec.hpText = nil
-                ec.hpColor = nil; ec.weapImg = nil; ec.weapImgColor = nil
+                ec.hpColor = nil; ec.weapImgTex = nil; ec.weapImgColor = nil
                 ec.weapText = nil; ec.weapTextColor = nil; ec.weapFrameVisible = nil
             end
 
             local bbg = tESP[plr]
-            -- distancia cuantizada: solo reescribe Size/Offset cada ~5 studs
             if ec.distBucket == nil or math.abs(ec.distBucket - dist) > 5 then
                 local scale = math.clamp(dist / CFG.MaxESP, 0, 1)
                 local sm = 1 + (scale * 1.5)
@@ -715,44 +842,39 @@ local function updateESP()
                 ec.distBucket = dist
             end
 
-            local nameLbl = bbg:FindFirstChild("Name")
-            if nameLbl then
-                if ec.nameVisible ~= CFG.NameESP then nameLbl.Visible = CFG.NameESP; ec.nameVisible = CFG.NameESP end
-                if ec.nameText ~= plr.Name then nameLbl.Text = plr.Name; ec.nameText = plr.Name end
+            if ec.nameLbl then
+                if ec.nameVisible ~= CFG.NameESP then ec.nameLbl.Visible = CFG.NameESP; ec.nameVisible = CFG.NameESP end
+                if ec.nameText ~= plr.Name then ec.nameLbl.Text = plr.Name; ec.nameText = plr.Name end
             end
 
-            local hpLbl = bbg:FindFirstChild("HP")
-            if hpLbl then
-                if ec.hpVisible ~= CFG.HealthESP then hpLbl.Visible = CFG.HealthESP; ec.hpVisible = CFG.HealthESP end
+            if ec.hpLbl then
+                if ec.hpVisible ~= CFG.HealthESP then ec.hpLbl.Visible = CFG.HealthESP; ec.hpVisible = CFG.HealthESP end
                 local hpText = string.format("%d HP", math.floor(hum.Health))
-                if ec.hpText ~= hpText then hpLbl.Text = hpText; ec.hpText = hpText end
+                if ec.hpText ~= hpText then ec.hpLbl.Text = hpText; ec.hpText = hpText end
                 local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                 local hpCol = hpR > 0.6 and C.hp or hpR > 0.3 and Color3.fromRGB(240,200,80) or C.danger
-                if ec.hpColor ~= hpCol then hpLbl.TextColor3 = hpCol; ec.hpColor = hpCol end
+                if ec.hpColor ~= hpCol then ec.hpLbl.TextColor3 = hpCol; ec.hpColor = hpCol end
             end
 
-            local weapFrame = bbg:FindFirstChild("WeapFrame")
-            if weapFrame then
-                local weapImg = weapFrame:FindFirstChild("WeapImg")
-                local weapNameLbl = weapFrame:FindFirstChild("WeapName")
+            if ec.weapFrame then
                 if CFG.WeaponESP and weapEntry then
-                    if ec.weapFrameVisible ~= true then weapFrame.Visible = true; ec.weapFrameVisible = true end
+                    if ec.weapFrameVisible ~= true then ec.weapFrame.Visible = true; ec.weapFrameVisible = true end
                     local tierTag = TIER_LABELS[weapEntry.tier] or "[?]"
                     local wText = tierTag .. " " .. weapEntry.label
                     local wColor = TIER_COLORS[weapEntry.tier] or Color3.fromRGB(200,200,200)
-                    if weapImg then
-                        if ec.weapImg ~= weapTexture then weapImg.Image = weapTexture; ec.weapImg = weapTexture end
-                        if ec.weapImgColor ~= weapEntry.color then weapImg.ImageColor3 = weapEntry.color; ec.weapImgColor = weapEntry.color end
+                    if ec.weapImg then
+                        if ec.weapImgTex ~= weapTexture then ec.weapImg.Image = weapTexture; ec.weapImgTex = weapTexture end
+                        if ec.weapImgColor ~= weapEntry.color then ec.weapImg.ImageColor3 = weapEntry.color; ec.weapImgColor = weapEntry.color end
                         local wv = weapTexture ~= ""
-                        if ec.weapImgVisible ~= wv then weapImg.Visible = wv; ec.weapImgVisible = wv end
+                        if ec.weapImgVisible ~= wv then ec.weapImg.Visible = wv; ec.weapImgVisible = wv end
                     end
-                    if weapNameLbl then
-                        if ec.weapText ~= wText then weapNameLbl.Text = wText; ec.weapText = wText end
-                        if ec.weapTextColor ~= wColor then weapNameLbl.TextColor3 = wColor; ec.weapTextColor = wColor end
-                        if ec.weapTextVisible ~= true then weapNameLbl.Visible = true; ec.weapTextVisible = true end
+                    if ec.weapNameLbl then
+                        if ec.weapText ~= wText then ec.weapNameLbl.Text = wText; ec.weapText = wText end
+                        if ec.weapTextColor ~= wColor then ec.weapNameLbl.TextColor3 = wColor; ec.weapTextColor = wColor end
+                        if ec.weapTextVisible ~= true then ec.weapNameLbl.Visible = true; ec.weapTextVisible = true end
                     end
                 else
-                    if ec.weapFrameVisible ~= false then weapFrame.Visible = false; ec.weapFrameVisible = false end
+                    if ec.weapFrameVisible ~= false then ec.weapFrame.Visible = false; ec.weapFrameVisible = false end
                 end
             end
         else
@@ -773,13 +895,15 @@ local function tryPickup()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    local folder = Workspace:FindFirstChild("DroppedItems")
+    local folder = getDroppedFolder()
     if not folder then return end
     local picked = false
+    local hrpPos = hrp.Position
     for _, m in ipairs(folder:GetChildren()) do
-        local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
+        local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart
+        if not part then part = m:FindFirstChildWhichIsA("BasePart", true) end
         if not part then continue end
-        local d = (hrp.Position - part.Position).Magnitude
+        local d = (hrpPos - part.Position).Magnitude
         if d < CFG.PickupRadius then
             local n = m.Name:lower()
             local ok = false
@@ -790,8 +914,8 @@ local function tryPickup()
             else ok = true end
             if ok then
                 pcall(function()
-                    if m:IsA("Model") then m:PivotTo(CFrame.new(hrp.Position))
-                    elseif part:IsA("BasePart") then part.CFrame = CFrame.new(hrp.Position) end
+                    if m:IsA("Model") then m:PivotTo(CFrame.new(hrpPos))
+                    elseif part:IsA("BasePart") then part.CFrame = CFrame.new(hrpPos) end
                 end)
                 picked = true; sessionPickups += 1
             end
@@ -804,7 +928,9 @@ end
 -- TRACK KILLS
 -- ============================================================================
 local function trackKills()
-    for _, plr in ipairs(Players:GetPlayers()) do
+    local plrs = Players:GetPlayers()
+    for i = 1, #plrs do
+        local plr = plrs[i]
         if plr == LocalPlayer then continue end
         local char = plr.Character; local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then
@@ -1018,9 +1144,15 @@ slider(espPage, "Rango ESP", "MaxESP", 50, 1500, false)
 
 local hitboxPage = pages["HITBOX"]
 section(hitboxPage, "EXPANDER")
-toggle(hitboxPage, "Activar Hitbox", "HitboxExpander", function(v) if v then for _,p in ipairs(Players:GetPlayers()) do if p.Character then applyHitbox(p.Character) end end end end)
-slider(hitboxPage, "Tamaño", "HitboxSize", 2, 30, false, function(v) if CFG.HitboxExpander then for _,p in ipairs(Players:GetPlayers()) do if p.Character then applyHitbox(p.Character) end end end end)
-slider(hitboxPage, "Transparencia", "HitboxTransparency", 0, 1, true)
+toggle(hitboxPage, "Activar Hitbox", "HitboxExpander", function(v)
+    if v then reapplyAllHitboxes() else restoreAllHitboxes() end
+end)
+slider(hitboxPage, "Tamaño", "HitboxSize", 2, 30, false, function(v)
+    if CFG.HitboxExpander then invalidateHitboxSizeCache(); reapplyAllHitboxes() end
+end)
+slider(hitboxPage, "Transparencia", "HitboxTransparency", 0, 1, true, function(v)
+    if CFG.HitboxExpander then invalidateHitboxTransparencyCache(); reapplyAllHitboxes() end
+end)
 
 local pickPage = pages["PICKUP"]
 section(pickPage, "AUTO PICKUP")
@@ -1056,8 +1188,11 @@ section(safePage, "PANEL")
 keybindRow(safePage, "Abrir Panel", "PanelKey")
 keybindRow(safePage, "Cerrar Panel", "CloseKey")
 actionBtn(safePage, "Reiniciar script", C.danger, function()
+    uninstallSilentHook()
+    _scriptActive = false
     pcall(function() if originalDisplayName then LocalPlayer.DisplayName = originalDisplayName end end)
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+    restoreAllHitboxes()
     espScreen:Destroy(); sg:Destroy()
     for plr in pairs(pESP) do clearESP(plr) end
     getgenv().BSS_Aim_Loaded = false
@@ -1109,8 +1244,11 @@ end
 
 minBtn.MouseButton1Click:Connect(closePanel)
 closeBtn.MouseButton1Click:Connect(function()
+    uninstallSilentHook()
+    _scriptActive = false
     pcall(function() if originalDisplayName then LocalPlayer.DisplayName = originalDisplayName end end)
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+    restoreAllHitboxes()
     espScreen:Destroy(); sg:Destroy()
     for plr in pairs(pESP) do clearESP(plr) end
     getgenv().BSS_Aim_Loaded = false
@@ -1154,19 +1292,24 @@ local fpsCount = 0; local fpsTimer = tick(); local currentFPS = 60
 -- BACKGROUND LOOPS
 -- ============================================================================
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do pcall(updateESP); task.wait(CFG.ESPRefresh or 0.1) end
+    while _scriptActive do pcall(updateESP); task.wait(CFG.ESPRefresh or 0.1) end
 end)
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do pcall(tryPickup); pcall(trackKills); task.wait(0.2) end
+    while _scriptActive do pcall(tryPickup); task.wait(0.2) end
 end)
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do pcall(applyHideName); task.wait(1.5) end
+    while _scriptActive do pcall(trackKills); task.wait(0.25) end
 end)
 task.spawn(function()
-    while getgenv().BSS_Aim_Loaded do
+    while _scriptActive do pcall(applyHideName); task.wait(1.5) end
+end)
+task.spawn(function()
+    while _scriptActive do
         if CFG.HitboxExpander then
             for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and plr.Character then applyHitbox(plr.Character) end
+                if plr ~= LocalPlayer and plr.Character and not _hitboxOriginal[plr.Character] then
+                    applyHitbox(plr.Character)
+                end
             end
         end
         task.wait(1)
@@ -1174,28 +1317,46 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- MAIN LOOP — car aim v2 (snap directo + CameraSubject restore)
+-- TARGET SCAN — Heartbeat, 10 Hz, fuera del render step
+-- ============================================================================
+local _lastScan = 0
+RunService.Heartbeat:Connect(function()
+    if not _scriptActive then return end
+    if not (CFG.Enabled and (aimOn or CFG.TriggerBot)) then
+        currentTarget = nil
+        return
+    end
+    local now = tick()
+    if now - _lastScan < 0.1 then return end
+    _lastScan = now
+
+    local _, bestPart, bestScore = getTargetWithScore()
+    if targetDead() then
+        if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
+    elseif bestPart and bestPart ~= currentTarget then
+        if bestScore + 40 < targetPx() and (now - lastSwitch) > 0.3 then currentTarget = bestPart; lastSwitch = now end
+    end
+    if currentTarget and targetPx() > CFG.FOVRadius * 1.2 then
+        if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
+    end
+end)
+
+-- ============================================================================
+-- MAIN LOOP — solo cámara + HUD (sin raycasts, sin scans)
 -- ============================================================================
 local _lastKills = -1; local _lastPickups = -1; local _lastMinutes = -1; local _lastFPS = -1
 
 pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Value + 1, function(dt)
+    if not _scriptActive then return end
     fpsCount += 1
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
     local now = tick()
 
-    if (aimOn or CFG.TriggerBot) and (now - lastTargetCheck) > 0.05 then
-        lastTargetCheck = now
-        local _, bestPart, bestScore = getTargetWithScore()
-        if targetDead() then
-            if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
-        elseif bestPart and bestPart ~= currentTarget then
-            if bestScore + 40 < targetPx() and (now - lastSwitch) > 0.3 then currentTarget = bestPart; lastSwitch = now end
-        end
-        if currentTarget and targetPx() > CFG.FOVRadius * 1.2 then
-            if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
-        end
-    elseif not (aimOn or CFG.TriggerBot) then currentTarget = nil end
+    -- silent aim hook dinámico
+    local wantHook = CFG.SilentAim and aimOn and IS_PC
+    if wantHook and not silentHookInstalled then installSilentHook()
+    elseif not wantHook and silentHookInstalled then uninstallSilentHook() end
 
     if CFG.DrawFOV and CFG.Enabled and aimOn then
         local wantSize = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
@@ -1210,7 +1371,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
-    -- ── CAMERA LOCK ────────────────────────────────────────────────────
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
         if inCar then
             enterCarAim(hum)
@@ -1255,5 +1415,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Lag fix — write-cache ESP/hitbox/HUD", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — lag-kill activo")
+notify("BSS-Aim ULTRA v12.4", "Lag kill v2 — silent aim dinámico + scan fuera del render", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — lag kill v2 activo")

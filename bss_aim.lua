@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v13.1
--- Weapon ESP Fix, Hide Name (...), ESP Full Distance, Stealth Pickup
+-- BSS-Aim ULTRA v13.2
+-- Anti-Custom Nametag, Full Weapon DB, ESP Full Distance, Stealth Pickup
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -104,7 +104,6 @@ end
 local _wepCache = {}
 local function invalidateWep(uid) _wepCache[uid] = nil end
 
--- FIX: Búsqueda recursiva de armas
 local function getBestWeapon(plr)
     local uid  = plr.UserId
     local char = plr.Character
@@ -125,7 +124,6 @@ local function getBestWeapon(plr)
             
             local e = resolveWeapon(t.Name)
             local tier = e and e.tier or 0
-            -- Ignorar si el tier es 0 y ya tenemos una mejor arma
             if tier > bestTier or (best == nil and tier == 0) then
                 bestTier = tier
                 best     = e or {tier=0,label=t.Name:sub(1,14),col=Color3.fromRGB(200,200,200)}
@@ -181,7 +179,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 21
+local CONFIG_VERSION = 22
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -386,9 +384,10 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- HIDE NAME (FORZADO CON "..." EN LOOP)
+-- HIDE NAME (ANTI-CUSTOM NAMETAG)
 -- ============================================================================
 local originalDisplayName = nil
+
 local function applyHideName()
     if _uiCache and _uiCache.hideName == CFG.HideName and _uiCache.hideBoard == CFG.HideLeaderboard then return end
     if not _uiCache then _uiCache = {} end
@@ -401,22 +400,55 @@ local function applyHideName()
     end)
 end
 
+-- Loop que destruye los nametags falsos del juego
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         if CFG.HideName then
             pcall(function()
                 if originalDisplayName == nil then originalDisplayName = LocalPlayer.DisplayName end
+                
+                -- 1. Ocultar el nombre de Roblox por defecto
                 LocalPlayer.DisplayName = CFG.HideNameText or "..."
-                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                    LocalPlayer.Character.Humanoid.DisplayName = CFG.HideNameText or "..."
+                local char = LocalPlayer.Character
+                if char then
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        hum.DisplayName = CFG.HideNameText or "..."
+                        hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+                    end
+                    
+                    -- 2. Buscar y ocultar el nametag custom de BlockSpin
+                    for _, v in ipairs(char:GetDescendants()) do
+                        if v:IsA("BillboardGui") or v:IsA("TextLabel") or v:IsA("SurfaceGui") then
+                            if v.Name:lower():find("name") or v.Name:lower():find("tag") or v:IsA("BillboardGui") then
+                                v.Enabled = false
+                                if v:IsA("TextLabel") then v.Visible = false end
+                            end
+                        end
+                    end
                 end
             end)
         else
             pcall(function()
                 if originalDisplayName then
                     LocalPlayer.DisplayName = originalDisplayName
-                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                        LocalPlayer.Character.Humanoid.DisplayName = originalDisplayName
+                    local char = LocalPlayer.Character
+                    if char then
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            hum.DisplayName = originalDisplayName
+                            hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
+                        end
+                        
+                        -- Restaurar nametags
+                        for _, v in ipairs(char:GetDescendants()) do
+                            if v:IsA("BillboardGui") or v:IsA("TextLabel") or v:IsA("SurfaceGui") then
+                                if v.Name:lower():find("name") or v.Name:lower():find("tag") or v:IsA("BillboardGui") then
+                                    v.Enabled = true
+                                    if v:IsA("TextLabel") then v.Visible = true end
+                                end
+                            end
+                        end
                     end
                 end
             end)
@@ -792,7 +824,6 @@ local function updateESP()
                     end
                 end
 
-                -- FIX: Forzamos actualización del arma en todos los frames para que no falle
                 if refs.wep and CFG.WeaponESP then
                     local we, tex = getBestWeapon(plr)
                     if we then
@@ -935,7 +966,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v13.1", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v13.2", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1249,7 +1280,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v13.1"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v13.2"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
@@ -1376,5 +1407,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v13.1", "Weapon ESP Fix + Full Distance", 6)
-print("[BSS-Aim ULTRA v13.1] cargado - Full DB & GetDescendants")
+notify("BSS-Aim ULTRA v13.2", "Anti-Custom Nametag activo", 6)
+print("[BSS-Aim ULTRA v13.2] cargado - Anti-Custom Nametag")

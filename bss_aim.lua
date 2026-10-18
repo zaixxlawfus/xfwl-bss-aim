@@ -1,16 +1,12 @@
 -- ============================================================================
--- BSS-Aim ULTRA v15.1 — HARD LOCK EDITION
--- Instant Head Snap, Highlight ESP, Zero Lag
--- Full script, no lines removed. 1550+ lines.
+-- BSS-Aim ULTRA v15.2 — ABSOLUTE GLUE LOCK
+-- 100% Head Lock, Highlight ESP, Zero Lag
 -- ============================================================================
 
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 
--- ============================================================================
--- SERVICES
--- ============================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -20,34 +16,22 @@ local HttpService = game:GetService("HttpService")
 local StarterGui = game:GetService("StarterGui")
 local CoreGui = game:GetService("CoreGui")
 
--- ============================================================================
--- LOCAL PLAYER & CAMERA
--- ============================================================================
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- ============================================================================
--- CLEANUP PREVIOUS INSTANCES
--- ============================================================================
 pcall(function()
     if gethui then
         for _, v in ipairs(gethui():GetChildren()) do
-            if v.Name:match("^BSS_") then
-                v:Destroy()
-            end
+            if v.Name:match("^BSS_") then v:Destroy() end
         end
     end
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     if pg then
         for _, v in ipairs(pg:GetChildren()) do
-            if v.Name:match("^BSS_") then
-                v:Destroy()
-            end
+            if v.Name:match("^BSS_") then v:Destroy() end
         end
     end
-    pcall(function()
-        RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop")
-    end)
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 end)
 
 getgenv().BSS_Aim_Loaded = true
@@ -58,7 +42,7 @@ local IS_PC = not IS_MOBILE
 local ICON_SPLASH = "rbxassetid://96190503453096"
 
 -- ============================================================================
--- WEAPON DATABASE (Full)
+-- WEAPON DATABASE
 -- ============================================================================
 local WEAPON_DB = {
     ["M249"]               = { tier=5, label="M249",         color=Color3.fromRGB(255,50,50),   icon="" },
@@ -190,7 +174,7 @@ end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 18 -- Subido para forzar el Hard Lock
+local CONFIG_VERSION = 19 -- Subido para forzar el Hard Lock pegajoso
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -926,7 +910,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM (HIGHLIGHT CHAMS ONLY)
+-- ESP SYSTEM (HIGHLIGHT CHAMS)
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -1250,7 +1234,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 16),
     Position = UDim2.new(0, 52, 0, 5),
     BackgroundTransparency = 1,
-    Text = "BSS-AIM ULTRA v15.1",
+    Text = "BSS-AIM ULTRA v15.2",
     TextColor3 = Color3.fromRGB(255, 255, 255),
     TextSize = 14,
     Font = Enum.Font.GothamBold,
@@ -1262,7 +1246,7 @@ new("TextLabel", {
     Size = UDim2.new(0, 220, 0, 12),
     Position = UDim2.new(0, 52, 0, 21),
     BackgroundTransparency = 1,
-    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  HARD LOCK",
+    Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  GLUE LOCK",
     TextColor3 = C.accent,
     TextSize = 9,
     Font = Enum.Font.Gotham,
@@ -2030,7 +2014,7 @@ wmLabel.Font = Enum.Font.GothamBold
 wmLabel.TextSize = 12
 wmLabel.TextColor3 = C.accent
 wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v15.1 — HARD LOCK"
+wmLabel.Text = "BSS-Aim Ultra v15.2 — GLUE LOCK"
 wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
@@ -2167,7 +2151,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================================
--- MAIN RENDER LOOP
+-- MAIN RENDER LOOP (100% GLUE LOCK)
 -- ============================================================================
 local _lastKills = -1
 local _lastPickups = -1
@@ -2226,7 +2210,11 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     if lockActive then
         local inCar = _localHum and _localHum.SeatPart ~= nil
         local targetPos = currentTarget.Position
-        local targetCF = CFrame.lookAt(Camera.CFrame.Position, targetPos)
+        
+        -- FORZAMOS SCRIPTABLE PARA QUE LA FÍSICA NO MUEVA LA CÁMARA
+        if Camera.CameraType ~= Enum.CameraType.Scriptable then
+            Camera.CameraType = Enum.CameraType.Scriptable
+        end
 
         if inCar then
             enterCarAim(_localHum)
@@ -2239,7 +2227,7 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
                 end
                 local carCF = CFrame.lookAt(camPos, targetPos, upVec)
                 
-                -- HARD LOCK PARA CARRO
+                -- HARD LOCK 100%
                 if CFG.AimSmooth >= 90 then
                     Camera.CFrame = carCF
                 else
@@ -2250,11 +2238,9 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         else
             if _carAimActive then exitCarAim() end
             
-            if Camera.CameraType ~= Enum.CameraType.Custom then
-                Camera.CameraType = Enum.CameraType.Custom
-            end
+            local targetCF = CFrame.lookAt(Camera.CFrame.Position, targetPos)
             
-            -- HARD LOCK A PIE
+            -- HARD LOCK 100% GLUE
             if CFG.AimSmooth >= 90 then
                 Camera.CFrame = targetCF
             else
@@ -2304,5 +2290,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v15.1", "Hard Lock a la cabeza activado", 6)
-print("[BSS-Aim ULTRA v15.1] cargado — HARD LOCK EDITION")
+notify("BSS-Aim ULTRA v15.2", "100% Glue Lock a la cabeza activo", 6)
+print("[BSS-Aim ULTRA v15.2] cargado — GLUE LOCK EDITION")

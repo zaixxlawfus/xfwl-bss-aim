@@ -1,5 +1,5 @@
 -- ============================================================================
--- BSS-Aim ULTRA v14.1 — MERGED EDITION (UI FIX)
+-- BSS-Aim ULTRA v14.2 — MERGED EDITION (UI Force Visible)
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -155,7 +155,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CFG_FOLDER  = "BSS_Ultra_v14"
 local CFG_FILE    = CFG_FOLDER.."/config.json"
 local HAS_IO      = (writefile and readfile and isfile and makefolder) and true or false
-local CFG_VER     = 21 -- forzando reset para que tome el UI fix
+local CFG_VER     = 22 -- Forzando reset
 
 local function mkFolder()
     if not HAS_IO then return end
@@ -237,7 +237,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- COLORS
+-- COLORS & UI HELPER
 -- ============================================================================
 local C = {
     bg    = Color3.fromRGB(6,6,8),      bg2   = Color3.fromRGB(12,12,16),
@@ -250,12 +250,8 @@ local C = {
     gold  = Color3.fromRGB(255,200,50),
 }
 
--- FIX: Volvemos a gethui para que el panel sea visible
+-- FORZAMOS PlayerGui
 local function gui()
-    if gethui then 
-        local ok,r = pcall(gethui)
-        if ok and r then return r end 
-    end
     return LP:WaitForChild("PlayerGui")
 end
 
@@ -338,23 +334,17 @@ local function exitCarAim()
 end
 
 -- ============================================================================
--- HIDE NAME (Delayed to avoid CoreGui errors)
+-- HIDE NAME (SIN CoreGui, para que no tire error rojo)
 -- ============================================================================
 local _origName = nil
 local function applyHideName()
-    if _uiCache.hideName == CFG.HideName and _uiCache.hideBoard == CFG.HideBoard then return end
+    if _uiCache.hideName == CFG.HideName then return end
     _uiCache.hideName = CFG.HideName
-    _uiCache.hideBoard = CFG.HideBoard
     pcall(function()
         if not _origName then _origName = LP.DisplayName end
         LP.DisplayName = CFG.HideName and (CFG.HideNameTxt or "...") or _origName
     end)
-    task.delay(1, function()
-        pcall(function()
-            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideBoard)
-            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName)
-        end)
-    end)
+    -- Se eliminó StarterGui:SetCoreGuiEnabled para que la consola no tire error nil value.
 end
 
 -- ============================================================================
@@ -589,7 +579,7 @@ end)
 -- ============================================================================
 local fovSG = Instance.new("ScreenGui")
 fovSG.Name="BSS_FOV"; fovSG.ResetOnSpawn=false; fovSG.IgnoreGuiInset=true
-fovSG.DisplayOrder=999; fovSG.Parent=gui()
+fovSG.DisplayOrder=9999; fovSG.Parent=gui()
 
 local fovRing = Instance.new("Frame")
 fovRing.BackgroundTransparency=1; fovRing.AnchorPoint=Vector2.new(.5,.5)
@@ -829,7 +819,7 @@ local function pad(p,t,b,l,r) local u=Instance.new("UIPadding",p); u.PaddingTop=
 -- ============================================================================
 -- PANEL PRINCIPAL
 -- ============================================================================
-local sg = mk("ScreenGui",{Name="BSS_UI",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=gui()})
+local sg = mk("ScreenGui",{Name="BSS_UI",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=9999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=gui()})
 local PW,PH = 430,560
 
 local panel = mk("Frame",{Size=UDim2.fromOffset(PW,PH),Position=UDim2.new(.5,-PW/2,.5,-PH/2),BackgroundColor3=C.bg,BorderSizePixel=0,Parent=sg})
@@ -846,7 +836,7 @@ rnd(logoF,10); stk(logoF,Color3.fromRGB(255,255,255),1.5)
 mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.72,.72),BackgroundTransparency=1,Image=ICON,ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=logoF})
 
 mk("TextLabel",{Size=UDim2.new(0,200,0,18),Position=UDim2.new(0,52,0,4),BackgroundTransparency=1,Text="BSS-AIM ULTRA",TextColor3=Color3.fromRGB(255,255,255),TextSize=15,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
-mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14.1 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
+mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14.2 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
 
 local function hdrBtn(txt,xOff)
     local b=mk("TextButton",{Size=UDim2.fromOffset(28,28),Position=UDim2.new(1,xOff,0.5,-14),BackgroundColor3=C.bg3,BorderSizePixel=0,Text=txt,TextColor3=C.acc,TextSize=14,Font=Enum.Font.GothamBold,AutoButtonColor=false,Active=true,Parent=hdr,ZIndex=2})
@@ -1147,11 +1137,11 @@ end)
 -- ============================================================================
 -- HUD
 -- ============================================================================
-local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=999,Parent=gui()})
+local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=9999,Parent=gui()})
 
 local wm=mk("Frame",{Size=UDim2.fromOffset(230,26),Position=UDim2.new(0,18,0,18),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(wm,8); stk(wm,C.acc,1)
-mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14.1 — Merged",Parent=wm})
+mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14.2",Parent=wm})
 
 local stats=mk("Frame",{Size=UDim2.fromOffset(175,82),Position=UDim2.new(1,-193,0,52),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(stats,8); stk(stats,C.acc2,1)
@@ -1288,5 +1278,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-toast("BSS-Aim ULTRA v14.1","Merged Edition — cargado",5)
-print("[BSS-Aim ULTRA v14.1] OK | UI Fix + gethui + CoreGui safe")
+toast("BSS-Aim ULTRA v14.2","Cargado y visible",5)
+print("[BSS-Aim ULTRA v14.2] OK | UI parented to PlayerGui")

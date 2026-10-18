@@ -1,5 +1,5 @@
 -- ============================================================================
--- BSS-Aim ULTRA v15.0 — COMPLETO | FakePart Camera Lock
+-- BSS-Aim ULTRA v15.1 — COMPLETO | FakePart Camera Lock (Restore Fix)
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -274,10 +274,7 @@ local _inCar            = false
 local lastMouseMove     = 0
 local manualAimOverride = false
 
--- ── FAKE PART: subject falso que ancla la posición de cámara ──────────────
--- CameraType queda Custom siempre; solo cambiamos CameraSubject
--- → Roblox deja de recalcular la posición de la cámara encima del lock
--- → el personaje se sigue moviendo con libertad total
+-- ── FAKE PART ─────────────────────────────────────────────────────────────
 local _fakePart = Instance.new("Part")
 _fakePart.Name          = "BSS_FakeCamSubject"
 _fakePart.Size          = Vector3.new(0.1,0.1,0.1)
@@ -298,13 +295,35 @@ local function activateLock()
     Camera.CameraSubject  = _fakePart
 end
 
+-- ── REEMPLAZO AQUÍ (FUNCIÓN NUEVA) ────────────────────────────────────────
 local function restoreCamera()
     if not _fakeLockActive then return end
     _fakeLockActive = false
     pcall(function()
+        -- 1. Restaurar subject
         Camera.CameraSubject = _origCamSubject or _lHum
+
+        -- 2. FIX: devolver CFrame a donde está el jugador mirando hacia adelante
+        -- sin esto el CFrame del lock queda pegado y Roblox lo usa como base
+        if _lHRP then
+            -- tomamos la posición ACTUAL de la cámara (no la del HRP)
+            -- y la rotación del HRP en el plano horizontal
+            local camPos = Camera.CFrame.Position
+            local hrpLook = Vector3.new(
+                _lHRP.CFrame.LookVector.X,
+                0,
+                _lHRP.CFrame.LookVector.Z
+            ).Unit
+            -- si el vector es cero (jugador quieto mirando arriba/abajo)
+            -- usar el LookVector completo
+            if hrpLook.Magnitude < 0.01 then
+                hrpLook = _lHRP.CFrame.LookVector
+            end
+            Camera.CFrame = CFrame.lookAt(camPos, camPos + hrpLook)
+        end
     end)
 end
+-- ──────────────────────────────────────────────────────────────────────────
 
 -- ── LOCAL PLAYER REFS ─────────────────────────────────────────────────────
 local _lChar, _lHum, _lHRP = nil, nil, nil
@@ -850,7 +869,7 @@ mk("TextLabel",{Size=UDim2.new(0,200,0,18),Position=UDim2.new(0,52,0,4),
     TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
 mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),
     BackgroundTransparency=1,
-    Text="PRO EDITION · v15.0 · "..(IS_PC and "PC" or "Mobile"),
+    Text="PRO EDITION · v15.1 · "..(IS_PC and "PC" or "Mobile"),
     TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,
     TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
 
@@ -1255,7 +1274,7 @@ rnd(wm,8); stk(wm,C.acc,1)
 mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),
     BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,
     TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,
-    Text="BSS-Aim ULTRA v15.0",Parent=wm})
+    Text="BSS-Aim ULTRA v15.1",Parent=wm})
 
 local stats=mk("Frame",{Size=UDim2.fromOffset(175,82),
     Position=UDim2.new(1,-193,0,52),BackgroundColor3=C.bg,
@@ -1317,7 +1336,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================================
--- MAIN LOOP — CAMERA LOCK (Custom + FakePart, sin Scriptable)
+-- MAIN LOOP — CAMERA LOCK
 -- ============================================================================
 pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 
@@ -1402,5 +1421,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop",
     end
 end)
 
-toast("BSS-Aim ULTRA v15.0","FakePart lock — Custom sin Scriptable",5)
-print("[BSS-Aim ULTRA v15.0] OK | FakePart subject + CFrame.lookAt + Lerp")
+toast("BSS-Aim ULTRA v15.1","FakePart lock + Restore fix",5)
+print("[BSS-Aim ULTRA v15.1] OK | FakePart subject + CFrame.lookAt + Lerp + RestoreFix")

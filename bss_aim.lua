@@ -12,6 +12,7 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local StarterGui = game:GetService("StarterGui")
+local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -21,12 +22,11 @@ pcall(function()
         for _, v in ipairs(gethui():GetChildren()) do
             if v.Name:match("^BSS_") then v:Destroy() end
         end
-    else
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            for _, v in ipairs(pg:GetChildren()) do
-                if v.Name:match("^BSS_") then v:Destroy() end
-            end
+    end
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if pg then
+        for _, v in ipairs(pg:GetChildren()) do
+            if v.Name:match("^BSS_") then v:Destroy() end
         end
     end
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
@@ -148,7 +148,7 @@ Players.PlayerAdded:Connect(function(plr) if plr ~= LocalPlayer then hookWeaponC
 Players.PlayerRemoving:Connect(function(plr) weaponCache[plr.UserId] = nil end)
 
 -- ============================================================================
--- LOCAL HUMANOID CACHE — mata FindFirstChildOfClass por frame
+-- LOCAL HUMANOID CACHE
 -- ============================================================================
 local _localChar = nil
 local _localHum = nil
@@ -360,8 +360,8 @@ local TIER_COLORS = {
 }
 local TIER_LABELS = { [5]="[Ω]", [4]="[L]", [3]="[E]", [2]="[R]", [1]="[U]", [0]="[?]" }
 
+-- XENO FIX: usa PlayerGui en vez de gethui()
 local function getParent()
-    if gethui then local ok, r = pcall(gethui); if ok and r then return r end end
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
@@ -590,7 +590,7 @@ UserInputService.InputEnded:Connect(function(i, gp)
 end)
 
 -- ============================================================================
--- SILENT AIM — SOLO __namecall (FireServer rewrite), __index REMOVIDO
+-- SILENT AIM — SOLO __namecall (FireServer rewrite)
 -- ============================================================================
 local mt = nil
 pcall(function() if getrawmetatable then mt = getrawmetatable(game) end end)
@@ -732,7 +732,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM — cache de char/hrp/head/hum + culling de highlights
+-- ESP SYSTEM
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -743,7 +743,6 @@ local function clearESP(plr)
     _espCache[plr] = nil
 end
 
--- Refresh de char refs por jugador (invalida solo cuando cambia el Character)
 local function refreshCharRefs(ec, char)
     ec.char = char
     ec.hrp = char:FindFirstChild("HumanoidRootPart")
@@ -751,7 +750,6 @@ local function refreshCharRefs(ec, char)
     ec.hum = char:FindFirstChild("Humanoid")
 end
 
--- ── HIGHLIGHTS: solo cada 0.25s, solo dentro de MaxESP * 0.6 ─────────────
 local function updateHighlights()
     if not CFG.PlayerESP or not CFG.ChamsESP then
         for plr in pairs(pESP) do
@@ -803,7 +801,6 @@ local function updateHighlights()
     for plr in pairs(pESP) do if not plr.Parent then clearESP(plr) end end
 end
 
--- ── BILLBOARDS: cada 0.1s, dentro de MaxESP ──────────────────────────────
 local function updateBillboards()
     if not CFG.PlayerESP or not (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
         for plr in pairs(tESP) do
@@ -1370,7 +1367,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- TARGET SCAN — Heartbeat 10 Hz
+-- TARGET SCAN
 -- ============================================================================
 local _lastScan = 0
 RunService.Heartbeat:Connect(function()
@@ -1395,7 +1392,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================================
--- MAIN LOOP — solo cámara + HUD (early-exit cuando idle)
+-- MAIN LOOP
 -- ============================================================================
 local _lastKills = -1; local _lastPickups = -1; local _lastMinutes = -1; local _lastFPS = -1
 
@@ -1406,7 +1403,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     fpsCount += 1
     if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
 
-    -- silent aim hook dinámico (solo cuando aim + target)
     local wantHook = CFG.SilentAim and aimOn and currentTarget and IS_PC
     if wantHook and not silentHookInstalled then installSilentHook()
     elseif not wantHook and silentHookInstalled then uninstallSilentHook() end
@@ -1414,7 +1410,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     local aimActive = CFG.Enabled and aimOn
     local lockActive = aimActive and currentTarget and CFG.CameraLock
 
-    -- FOV circle
     if CFG.DrawFOV and aimActive then
         local wantSize = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
         local wantColor = currentTarget and C.aimLock or C.accent
@@ -1425,7 +1420,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         if _uiCache.fovVisible ~= false then fovCircle.Visible = false; _uiCache.fovVisible = false end
     end
 
-    -- camera lock (solo si vale la pena)
     if lockActive then
         local inCar = _localHum and _localHum.SeatPart ~= nil
         if inCar then
@@ -1448,7 +1442,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         end
     else
         if _carAimActive then exitCarAim() end
-        -- no tocar nada más si no estábamos en car aim
         if _localHum and not _localHum.SeatPart and Camera.CameraType == Enum.CameraType.Scriptable then
             Camera.CameraType = Enum.CameraType.Custom
         end
@@ -1457,7 +1450,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         end
     end
 
-    -- HUD
     if _uiCache.watermarkVisible ~= CFG.HUDWatermark then watermark.Visible = CFG.HUDWatermark; _uiCache.watermarkVisible = CFG.HUDWatermark end
 
     if CFG.HUDFPS then
@@ -1474,5 +1466,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Lag fix raíz — kill __index + culling", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — lag raíz arreglado")
+notify("BSS-Aim ULTRA v12.4", "Xeno fix — UI en PlayerGui", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — Xeno fix activo")

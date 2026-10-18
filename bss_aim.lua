@@ -1367,7 +1367,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- TARGET SCAN
+-- TARGET SCAN — fluido (20 Hz aiming, cooldown corto, hysteresis baja)
 -- ============================================================================
 local _lastScan = 0
 RunService.Heartbeat:Connect(function()
@@ -1377,17 +1377,40 @@ RunService.Heartbeat:Connect(function()
         return
     end
     local now = tick()
-    if now - _lastScan < 0.1 then return end
+    -- 20 Hz cuando aiming, 10 Hz cuando trigger bot sin aim
+    local scanInterval = aimOn and 0.05 or 0.1
+    if now - _lastScan < scanInterval then return end
     _lastScan = now
 
     local _, bestPart, bestScore = getTargetWithScore()
-    if targetDead() then
-        if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
-    elseif bestPart and bestPart ~= currentTarget then
-        if bestScore + 40 < targetPx() and (now - lastSwitch) > 0.3 then currentTarget = bestPart; lastSwitch = now end
+
+    -- sin target en FOV → limpia
+    if not bestPart then
+        currentTarget = nil
+        return
     end
-    if currentTarget and targetPx() > CFG.FOVRadius * 1.2 then
-        if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
+
+    -- target actual muerto/fuera de rango → cambia YA, sin cooldown
+    if targetDead() then
+        currentTarget = bestPart
+        lastSwitch = now
+        return
+    end
+
+    -- mejor target es distinto → switch si es suficientemente mejor y pasó cooldown corto
+    if bestPart ~= currentTarget then
+        local currentPx = targetPx()
+        -- hysteresis 10px (era 40), cooldown 0.05s (era 0.3)
+        if (now - lastSwitch) > 0.05 and bestScore + 10 < currentPx then
+            currentTarget = bestPart
+            lastSwitch = now
+        end
+    end
+
+    -- target actual salió del FOV (1.1x en vez de 1.2x) → switch inmediato
+    if currentTarget and targetPx() > CFG.FOVRadius * 1.1 then
+        currentTarget = bestPart
+        lastSwitch = now
     end
 end)
 
@@ -1466,5 +1489,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Xeno fix — UI en PlayerGui", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — Xeno fix activo")
+notify("BSS-Aim ULTRA v12.4", "Target switch fluido activo", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — switch fluido")

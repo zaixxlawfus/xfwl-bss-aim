@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v12.3
--- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP HP.
+-- BSS-Aim ULTRA v12.4
+-- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP Armas + Tier
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -39,12 +39,126 @@ local IS_PC = not IS_MOBILE
 local ICON_SPLASH = "rbxassetid://96190503453096"
 
 -- ============================================================================
+-- WEAPON DATABASE & CACHE (PARA EL ESP)
+-- ============================================================================
+local WEAPON_DB = {
+    ["M249"]              = {tier=5, label="M249",        col=Color3.fromRGB(255,50,50)},
+    ["Anaconda"]          = {tier=5, label="Anaconda",    col=Color3.fromRGB(255,50,50)},
+    ["RPG"]               = {tier=4, label="RPG",         col=Color3.fromRGB(255,140,0)},
+    ["M16"]               = {tier=4, label="M16",         col=Color3.fromRGB(255,140,0)},
+    ["AK47"]              = {tier=4, label="AK47",        col=Color3.fromRGB(255,140,0)},
+    ["AK-47"]             = {tier=4, label="AK47",        col=Color3.fromRGB(255,140,0)},
+    ["Remington"]         = {tier=4, label="Remington",   col=Color3.fromRGB(255,140,0)},
+    ["MP5"]               = {tier=4, label="MP5",         col=Color3.fromRGB(255,140,0)},
+    ["Crossbow"]          = {tier=4, label="Crossbow",    col=Color3.fromRGB(255,140,0)},
+    ["Tactical Axe"]      = {tier=4, label="Tac.Axe",    col=Color3.fromRGB(255,140,0)},
+    ["Tactical Shovel"]   = {tier=4, label="Tac.Shovel",  col=Color3.fromRGB(255,140,0)},
+    ["Tactical Knife"]    = {tier=4, label="Tac.Knife",   col=Color3.fromRGB(255,140,0)},
+    ["Firework Launcher"] = {tier=4, label="Firework",    col=Color3.fromRGB(255,140,0)},
+    ["M24"]               = {tier=3, label="M24",         col=Color3.fromRGB(160,80,255)},
+    ["Draco"]             = {tier=3, label="Draco",       col=Color3.fromRGB(160,80,255)},
+    ["Skorpion"]          = {tier=3, label="Skorpion",    col=Color3.fromRGB(160,80,255)},
+    ["Double Barrel"]     = {tier=3, label="Dbl.Barrel",  col=Color3.fromRGB(160,80,255)},
+    ["Barbed Baseball Bat"]={tier=3, label="Barbed Bat",  col=Color3.fromRGB(160,80,255)},
+    ["Sledge Hammer"]     = {tier=3, label="Sledge",      col=Color3.fromRGB(160,80,255)},
+    ["Combat Axe"]        = {tier=3, label="Cmbt.Axe",    col=Color3.fromRGB(160,80,255)},
+    ["Machete"]           = {tier=3, label="Machete",     col=Color3.fromRGB(160,80,255)},
+    ["Shovel"]            = {tier=3, label="Shovel",      col=Color3.fromRGB(160,80,255)},
+    ["Brainrot Slapper"]  = {tier=2, label="Brainrot",    col=Color3.fromRGB(80,220,120)},
+    ["Hunting Rifle"]     = {tier=2, label="Hunt.Rifle",  col=Color3.fromRGB(80,220,120)},
+    ["Uzi"]               = {tier=2, label="Uzi",         col=Color3.fromRGB(80,220,120)},
+    ["Sawnoff"]           = {tier=2, label="Sawnoff",     col=Color3.fromRGB(80,220,120)},
+    ["P226"]              = {tier=2, label="P226",        col=Color3.fromRGB(80,220,120)},
+    ["Glock"]             = {tier=2, label="Glock",       col=Color3.fromRGB(80,220,120)},
+    ["Metal Baseball Bat"]= {tier=2, label="Metal Bat",   col=Color3.fromRGB(80,220,120)},
+    ["Wrench"]            = {tier=2, label="Wrench",      col=Color3.fromRGB(80,220,120)},
+    ["Crowbar"]           = {tier=2, label="Crowbar",     col=Color3.fromRGB(80,220,120)},
+    ["Axe"]               = {tier=2, label="Axe",         col=Color3.fromRGB(80,220,120)},
+    ["Frying Pan"]        = {tier=2, label="Pan",         col=Color3.fromRGB(80,220,120)},
+    ["Butcher Knife"]     = {tier=2, label="Butcher",     col=Color3.fromRGB(80,220,120)},
+    ["Switchblade"]       = {tier=2, label="Switchblade", col=Color3.fromRGB(80,220,120)},
+    ["Baseball Bat"]      = {tier=1, label="Baseball Bat",col=Color3.fromRGB(180,180,180)},
+    ["G3"]                = {tier=1, label="G3",          col=Color3.fromRGB(180,180,180)},
+    ["C9"]                = {tier=1, label="C9",          col=Color3.fromRGB(180,180,180)},
+}
+
+local TIER_LABEL = {[5]="[Ω]",[4]="[L]",[3]="[E]",[2]="[R]",[1]="[C]",[0]="[?]"}
+local TIER_COL   = {
+    [5]=Color3.fromRGB(255,50,50),[4]=Color3.fromRGB(255,140,0),
+    [3]=Color3.fromRGB(160,80,255),[2]=Color3.fromRGB(80,220,120),
+    [1]=Color3.fromRGB(180,180,180),[0]=Color3.fromRGB(120,120,120),
+}
+
+local function resolveWeapon(name)
+    if not name then return nil end
+    local e = WEAPON_DB[name]; if e then return e end
+    local lo = name:lower()
+    for k,v in pairs(WEAPON_DB) do if k:lower()==lo then return v end end
+    for k,v in pairs(WEAPON_DB) do if lo:find(k:lower(),1,true) then return v end end
+    return nil
+end
+
+local _wepCache = {}
+local function invalidateWep(uid) _wepCache[uid] = nil end
+
+local function getBestWeapon(plr)
+    local uid  = plr.UserId
+    local char = plr.Character
+    local bp   = plr:FindFirstChild("Backpack")
+    local eq   = char and char:FindFirstChildOfClass("Tool")
+    local key  = eq and eq.Name or "__none__"
+    
+    local cached = _wepCache[uid]
+    if cached and cached.key == key then return cached.entry, cached.tex end
+    
+    local best, bestTier, bestTex = nil, -1, ""
+    local function scan(parent)
+        if not parent then return end
+        for _, t in ipairs(parent:GetChildren()) do
+            if t:IsA("Tool") then
+                local e    = resolveWeapon(t.Name)
+                local tier = e and e.tier or 0
+                if tier > bestTier then
+                    bestTier = tier
+                    best     = e or {tier=0,label=t.Name:sub(1,14),col=Color3.fromRGB(200,200,200)}
+                    bestTex  = (t.TextureId and t.TextureId~="") and t.TextureId or ""
+                end
+            end
+        end
+    end
+    scan(bp); scan(char)
+    _wepCache[uid] = {key=key, entry=best, tex=bestTex}
+    return best, bestTex
+end
+
+local function hookWeaponCache(plr)
+    if plr == LocalPlayer then return end
+    local function onTool(c) if c:IsA("Tool") then invalidateWep(plr.UserId) end end
+    local bp = plr:FindFirstChild("Backpack")
+    if bp then bp.ChildAdded:Connect(onTool); bp.ChildRemoved:Connect(onTool) end
+    plr.ChildAdded:Connect(function(c)
+        if c.Name=="Backpack" then c.ChildAdded:Connect(onTool); c.ChildRemoved:Connect(onTool) end
+    end)
+    if plr.Character then
+        plr.Character.ChildAdded:Connect(onTool)
+        plr.Character.ChildRemoved:Connect(onTool)
+    end
+    plr.CharacterAdded:Connect(function(char)
+        invalidateWep(plr.UserId)
+        char.ChildAdded:Connect(onTool); char.ChildRemoved:Connect(onTool)
+    end)
+end
+for _,p in ipairs(Players:GetPlayers()) do hookWeaponCache(p) end
+Players.PlayerAdded:Connect(hookWeaponCache)
+Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
+
+-- ============================================================================
 -- CONFIG & SAVE
 -- ============================================================================
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 13
+local CONFIG_VERSION = 14
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -134,6 +248,7 @@ local DEFAULTS = {
     ChamsESP = true,
     NameESP = true,
     HealthESP = true,
+    WeaponESP = true,
     ItemESP = true,
     NoRecoil = true,
     HitboxExpander = false,
@@ -221,6 +336,7 @@ local C = {
     accent = Color3.fromRGB(255, 255, 255), accent2 = Color3.fromRGB(220, 220, 230), accent3 = Color3.fromRGB(180, 180, 190),
     fg = Color3.fromRGB(245, 245, 250), muted = Color3.fromRGB(140, 140, 155), danger = Color3.fromRGB(255, 70, 90), border = Color3.fromRGB(60, 60, 72),
     hp = Color3.fromRGB(80, 220, 120), stamina = Color3.fromRGB(255, 210, 60), aimOn = Color3.fromRGB(255, 80, 90), aimLock = Color3.fromRGB(255, 255, 255),
+    gold = Color3.fromRGB(255,200,50)
 }
 
 local function getParent()
@@ -461,7 +577,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM (HIGHLIGHT + TEXT HP/NAME + SCALING)
+-- ESP SYSTEM (CON FIX DE ARMAS Y TIERS)
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -471,7 +587,50 @@ local function clearESP(plr)
     if tESP[plr] then pcall(function() tESP[plr]:Destroy() end); tESP[plr] = nil end
 end
 
+local function makeBB(head)
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "BSS_TXT"; bb.AlwaysOnTop = true
+    bb.Adornee = head; bb.Parent = head
+    
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
+    nameLbl.Size = UDim2.new(1, 0, 0, 16); nameLbl.Position = UDim2.new(0, 0, 0, 0)
+    nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 14
+    nameLbl.TextColor3 = Color3.new(1,1,1); nameLbl.TextStrokeTransparency = 0
+    nameLbl.Parent = bb
+    
+    local hpLbl = Instance.new("TextLabel")
+    hpLbl.Name = "HP"; hpLbl.BackgroundTransparency = 1
+    hpLbl.Size = UDim2.new(1, 0, 0, 14); hpLbl.Position = UDim2.new(0, 0, 0, 16)
+    hpLbl.Font = Enum.Font.GothamBold; hpLbl.TextSize = 12
+    hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0
+    hpLbl.Parent = bb
+    
+    local wepLbl = Instance.new("TextLabel")
+    wepLbl.Name = "Wep"; wepLbl.BackgroundTransparency = 1
+    wepLbl.Size = UDim2.new(1, 0, 0, 14); wepLbl.Position = UDim2.new(0, 0, 0, 30)
+    wepLbl.Font = Enum.Font.GothamBold; wepLbl.TextSize = 11
+    wepLbl.TextColor3 = C.gold; wepLbl.TextStrokeTransparency = 0
+    wepLbl.TextXAlignment = Enum.TextXAlignment.Center
+    wepLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    wepLbl.Parent = bb
+
+    local wepImg = Instance.new("ImageLabel")
+    wepImg.Name = "WepImg"; wepImg.BackgroundTransparency = 1
+    wepImg.Size = UDim2.fromOffset(16, 16); wepImg.Position = UDim2.new(0, 4, 0, 29)
+    wepImg.ScaleType = Enum.ScaleType.Fit; wepImg.Image = ""
+    wepImg.Visible = false
+    wepImg.Parent = bb
+
+    return bb, {name=nameLbl, hp=hpLbl, wep=wepLbl, img=wepImg}
+end
+
+local _espRef = {}
+local _espSubframe = 0
+
 local function updateESP()
+    _espSubframe = (_espSubframe + 1) % 2
+
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then
             clearESP(plr)
@@ -488,7 +647,7 @@ local function updateESP()
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearESP(plr); continue end
 
-        -- 1. Highlight
+        -- 1. Highlight (Chams)
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
@@ -497,66 +656,82 @@ local function updateESP()
                 hl.Adornee = char; hl.Parent = char
                 pESP[plr] = hl
             end
+            
             local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             if hpR > 0.6 then pESP[plr].FillColor = C.hp
             elseif hpR > 0.3 then pESP[plr].FillColor = Color3.fromRGB(240, 200, 80)
             else pESP[plr].FillColor = C.danger end
-            pESP[plr].OutlineColor = Color3.fromRGB(0,0,0)
+            
+            if CFG.WeaponESP then
+                local we = getBestWeapon(plr)
+                pESP[plr].OutlineColor = we and we.col or Color3.fromRGB(0,0,0)
+            else
+                pESP[plr].OutlineColor = Color3.fromRGB(0,0,0)
+            end
         else
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
-        -- 2. Text (Nombre y HP)
-        if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP) then
-            if not tESP[plr] or not tESP[plr].Parent then
-                local bb = Instance.new("BillboardGui")
-                bb.Name = "BSS_TXT"; bb.AlwaysOnTop = true
-                bb.Adornee = head; bb.Parent = head
-                
-                local nameLbl = Instance.new("TextLabel")
-                nameLbl.Name = "Name"; nameLbl.BackgroundTransparency = 1
-                nameLbl.Size = UDim2.new(1, 0, 0, 16); nameLbl.Position = UDim2.new(0, 0, 0, 0)
-                nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize = 14
-                nameLbl.TextColor3 = Color3.new(1,1,1); nameLbl.TextStrokeTransparency = 0
-                nameLbl.Parent = bb
-                
-                local hpLbl = Instance.new("TextLabel")
-                hpLbl.Name = "HP"; hpLbl.BackgroundTransparency = 1
-                hpLbl.Size = UDim2.new(1, 0, 0, 14); hpLbl.Position = UDim2.new(0, 0, 0, 16)
-                hpLbl.Font = Enum.Font.GothamBold; hpLbl.TextSize = 12
-                hpLbl.TextColor3 = C.hp; hpLbl.TextStrokeTransparency = 0
-                hpLbl.Parent = bb
-                
-                tESP[plr] = bb
+        -- 2. Textos (Nombre, HP, Arma)
+        if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
+            local refs = _espRef[plr]
+            if not tESP[plr] or not tESP[plr].Parent or not refs then
+                local bb, r = makeBB(head)
+                tESP[plr] = bb; _espRef[plr] = r; refs = r
             end
             
             local bbg = tESP[plr]
             local scale = math.clamp(dist / CFG.MaxESP, 0, 1)
             local sizeMultiplier = 1 + (scale * 1.5) 
-            bbg.Size = UDim2.fromOffset(150 * sizeMultiplier, 40 * sizeMultiplier)
+            bbg.Size = UDim2.fromOffset(160 * sizeMultiplier, 50 * sizeMultiplier)
             bbg.StudsOffsetWorldSpace = Vector3.new(0, 3 * sizeMultiplier, 0)
 
-            local nameLbl = bbg:FindFirstChild("Name")
-            if nameLbl then
-                nameLbl.Visible = CFG.NameESP
-                nameLbl.Text = plr.Name
+            if refs.name then
+                refs.name.Visible = CFG.NameESP
+                refs.name.Text = plr.Name
             end
             
-            local hpLbl = bbg:FindFirstChild("HP")
-            if hpLbl then
-                hpLbl.Visible = CFG.HealthESP
-                hpLbl.Text = string.format("%d HP", math.floor(hum.Health))
-                local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                if hpR > 0.6 then hpLbl.TextColor3 = C.hp
-                elseif hpR > 0.3 then hpLbl.TextColor3 = Color3.fromRGB(240, 200, 80)
-                else hpLbl.TextColor3 = C.danger end
+            if refs.hp and _espSubframe == 0 then
+                refs.hp.Visible = CFG.HealthESP
+                if CFG.HealthESP then
+                    refs.hp.Text = string.format("%d HP", math.floor(hum.Health))
+                    local hpR = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                    if hpR > 0.6 then refs.hp.TextColor3 = C.hp
+                    elseif hpR > 0.3 then refs.hp.TextColor3 = Color3.fromRGB(240, 200, 80)
+                    else refs.hp.TextColor3 = C.danger end
+                end
+            end
+
+            if refs.wep and CFG.WeaponESP and _espSubframe == 0 then
+                local we, tex = getBestWeapon(plr)
+                if we then
+                    refs.wep.Visible = true
+                    refs.wep.Text = (TIER_LABEL[we.tier] or "[?]").." "..we.label
+                    refs.wep.TextColor3 = TIER_COL[we.tier] or C.acc
+                    
+                    if refs.img then
+                        local hasImg = (tex and tex ~= "")
+                        refs.img.Image = hasImg and tex or ""
+                        refs.img.Visible = hasImg
+                        
+                        -- FIX: Color blanco puro para que la textura se vea bien
+                        refs.img.ImageColor3 = Color3.new(1,1,1)
+                        
+                        -- Si hay imagen, movemos el texto a la derecha
+                        refs.wep.Position = hasImg and UDim2.new(0, 20, 0, 30) or UDim2.new(0, 0, 0, 30)
+                    end
+                else
+                    refs.wep.Visible = false
+                    if refs.img then refs.img.Visible = false end
+                end
             end
         else
-            if tESP[plr] then tESP[plr]:Destroy(); tESP[plr] = nil end
+            if tESP[plr] then tESP[plr]:Destroy(); tESP[plr] = nil; _espRef[plr] = nil end
         end
     end
 
     for plr, _ in pairs(pESP) do if not plr.Parent or not alive(plr) then clearESP(plr) end end
+    for plr, _ in pairs(tESP) do if not plr.Parent or not alive(plr) then clearESP(plr) end end
 end
 
 -- ============================================================================
@@ -642,7 +817,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.3", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.4", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -788,6 +963,7 @@ toggle(espPage, "Activar ESP", "PlayerESP")
 toggle(espPage, "Cuerpo iluminado", "ChamsESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
+toggle(espPage, "Arma equipada (Fix)", "WeaponESP")
 slider(espPage, "Rango ESP", "MaxESP", 50, 1500, false)
 
 local hitboxPage = pages["HITBOX"]
@@ -859,7 +1035,7 @@ miniIcon.Image = ICON_SPLASH; miniIcon.ImageColor3 = Color3.fromRGB(10, 10, 12);
 
 miniBtn.MouseButton1Click:Connect(function()
     panel.Visible = true; panel.Size = UDim2.fromOffset(1, 1)
-    panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2) -- Abre en el medio
+    panel.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
     TweenService:Create(panel, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(W, H) }):Play()
     miniBtn.Visible = false
 end)
@@ -881,7 +1057,6 @@ local function closePanel()
         tw.Completed:Connect(function()
             panel.Visible = false; panel.Size = UDim2.fromOffset(W, H)
             miniBtn.Visible = true
-            -- Tween para que el circulo aparezca en su lugar fijo arriba
             miniBtn.Size = UDim2.fromOffset(1, 1)
             TweenService:Create(miniBtn, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(56, 56) }):Play()
         end)
@@ -917,7 +1092,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v12.4"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
@@ -999,7 +1174,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     local inCar = hum and hum.SeatPart ~= nil
 
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        -- CAR AIM FIX: Forzamos Scriptable para que la camara del vehiculo no gane
         if inCar then
             if Camera.CameraType ~= Enum.CameraType.Scriptable then
                 Camera.CameraType = Enum.CameraType.Scriptable
@@ -1047,5 +1221,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.3", "Car Fix, Mini Arriba, No Recoil, HP ESP", 6)
-print("[BSS-Aim ULTRA v12.3] cargado")
+notify("BSS-Aim ULTRA v12.4", "ESP Armas Fix + Car Lock", 6)
+print("[BSS-Aim ULTRA v12.4] cargado")

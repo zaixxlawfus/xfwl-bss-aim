@@ -1,12 +1,11 @@
 -- ============================================================================
--- BSS-Aim ULTRA v13 — BlockSpin Edition
--- Premium rewrite: aim suave, cámara libre, ESP fluido, armas por tier
--- discord.gg/syncrypt
+-- BSS-Aim ULTRA v14 — MERGED EDITION
+-- v13 UI + v12.4 config + Smoothness slider + Weapon icon ESP
+-- BlockSpin only
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Servicios
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -18,7 +17,6 @@ local StarterGui       = game:GetService("StarterGui")
 local LP     = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- Limpieza inicial
 pcall(function()
     if gethui then
         for _, v in ipairs(gethui():GetChildren()) do
@@ -31,7 +29,7 @@ pcall(function()
             if v.Name:match("^BSS_") then v:Destroy() end
         end
     end
-    pcall(function() RunService:UnbindFromRenderStep("BSS_v13_Loop") end)
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 end)
 
 getgenv().BSS_Aim_Loaded = true
@@ -41,18 +39,15 @@ local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.Keyboar
 local IS_PC     = not IS_MOBILE
 local ICON      = "rbxassetid://96190503453096"
 
--- FIX: guardamos tipo original UNA VEZ, nunca lo perdemos
 local _origCamType    = Camera.CameraType
 local _origCamSubject = Camera.CameraSubject
 
 -- ============================================================================
--- WEAPON DATABASE — BlockSpin completa con tier y color por rareza
+-- WEAPON DB
 -- ============================================================================
 local WEAPON_DB = {
-    -- Tier 5 — Legendario (rojo)
     ["M249"]              = {tier=5, label="M249",        col=Color3.fromRGB(255,50,50)},
     ["Anaconda"]          = {tier=5, label="Anaconda",    col=Color3.fromRGB(255,50,50)},
-    -- Tier 4 — Épico (naranja)
     ["RPG"]               = {tier=4, label="RPG",         col=Color3.fromRGB(255,140,0)},
     ["M16"]               = {tier=4, label="M16",         col=Color3.fromRGB(255,140,0)},
     ["AK47"]              = {tier=4, label="AK47",        col=Color3.fromRGB(255,140,0)},
@@ -64,7 +59,6 @@ local WEAPON_DB = {
     ["Tactical Shovel"]   = {tier=4, label="Tac.Shovel",  col=Color3.fromRGB(255,140,0)},
     ["Tactical Knife"]    = {tier=4, label="Tac.Knife",   col=Color3.fromRGB(255,140,0)},
     ["Firework Launcher"] = {tier=4, label="Firework",    col=Color3.fromRGB(255,140,0)},
-    -- Tier 3 — Raro (morado)
     ["M24"]               = {tier=3, label="M24",         col=Color3.fromRGB(160,80,255)},
     ["Draco"]             = {tier=3, label="Draco",       col=Color3.fromRGB(160,80,255)},
     ["Skorpion"]          = {tier=3, label="Skorpion",    col=Color3.fromRGB(160,80,255)},
@@ -74,7 +68,6 @@ local WEAPON_DB = {
     ["Combat Axe"]        = {tier=3, label="Cmbt.Axe",    col=Color3.fromRGB(160,80,255)},
     ["Machete"]           = {tier=3, label="Machete",     col=Color3.fromRGB(160,80,255)},
     ["Shovel"]            = {tier=3, label="Shovel",      col=Color3.fromRGB(160,80,255)},
-    -- Tier 2 — Poco común (verde)
     ["Brainrot Slapper"]  = {tier=2, label="Brainrot",    col=Color3.fromRGB(80,220,120)},
     ["Hunting Rifle"]     = {tier=2, label="Hunt.Rifle",  col=Color3.fromRGB(80,220,120)},
     ["Uzi"]               = {tier=2, label="Uzi",         col=Color3.fromRGB(80,220,120)},
@@ -88,7 +81,6 @@ local WEAPON_DB = {
     ["Frying Pan"]        = {tier=2, label="Pan",         col=Color3.fromRGB(80,220,120)},
     ["Butcher Knife"]     = {tier=2, label="Butcher",     col=Color3.fromRGB(80,220,120)},
     ["Switchblade"]       = {tier=2, label="Switchblade", col=Color3.fromRGB(80,220,120)},
-    -- Tier 1 — Común (gris)
     ["Baseball Bat"]      = {tier=1, label="Baseball Bat",col=Color3.fromRGB(180,180,180)},
     ["G3"]                = {tier=1, label="G3",          col=Color3.fromRGB(180,180,180)},
     ["C9"]                = {tier=1, label="C9",          col=Color3.fromRGB(180,180,180)},
@@ -96,7 +88,7 @@ local WEAPON_DB = {
 
 local TIER_LABEL = {[5]="[Ω]",[4]="[L]",[3]="[E]",[2]="[R]",[1]="[C]",[0]="[?]"}
 local TIER_COL   = {
-    [5]=Color3.fromRGB(255,50,50), [4]=Color3.fromRGB(255,140,0),
+    [5]=Color3.fromRGB(255,50,50),[4]=Color3.fromRGB(255,140,0),
     [3]=Color3.fromRGB(160,80,255),[2]=Color3.fromRGB(80,220,120),
     [1]=Color3.fromRGB(180,180,180),[0]=Color3.fromRGB(120,120,120),
 }
@@ -110,7 +102,6 @@ local function resolveWeapon(name)
     return nil
 end
 
--- Cache de armas por UserId — invalidar al cambiar tool
 local _wepCache = {}
 local function invalidateWep(uid) _wepCache[uid] = nil end
 
@@ -118,12 +109,10 @@ local function getBestWeapon(plr)
     local uid = plr.UserId
     local char = plr.Character
     local bp   = plr:FindFirstChild("Backpack")
-    -- Cache key: nombre del tool equipado
     local eq = char and char:FindFirstChildOfClass("Tool")
     local key = eq and eq.Name or "__none__"
     local cached = _wepCache[uid]
     if cached and cached.key == key then return cached.entry, cached.tex end
-
     local best, bestTier, bestTex = nil, -1, ""
     local function scan(parent)
         if not parent then return end
@@ -163,31 +152,25 @@ Players.PlayerAdded:Connect(hookPlayer)
 Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 
 -- ============================================================================
--- CONFIG
+-- CONFIG (from v12.4 with v13 additions)
 -- ============================================================================
-local CFG_FOLDER  = "BSS_Ultra_v13"
+local CFG_FOLDER  = "BSS_Ultra_v14"
 local CFG_FILE    = CFG_FOLDER.."/config.json"
 local HAS_IO      = (writefile and readfile and isfile and makefolder) and true or false
-local CFG_VER     = 15
+local CFG_VER     = 20
 
 local function mkFolder()
     if not HAS_IO then return end
-    pcall(function()
-        if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end
-    end)
+    pcall(function() if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end end)
 end
 
 local function saveCfg(path, cfg)
     if not HAS_IO then return end
     local clean = {}
     for k,v in pairs(cfg) do
-        if type(v)=="number" or type(v)=="string" or type(v)=="boolean" then
-            clean[k]=v
-        elseif typeof(v)=="EnumItem" then
-            clean[k]=tostring(v); clean[k.."__e"]=v.EnumType.Name
-        elseif typeof(v)=="Color3" then
-            clean[k]={v.R,v.G,v.B}; clean[k.."__c"]=true
-        end
+        if type(v)=="number" or type(v)=="string" or type(v)=="boolean" then clean[k]=v
+        elseif typeof(v)=="EnumItem" then clean[k]=tostring(v); clean[k.."__e"]=v.EnumType.Name
+        elseif typeof(v)=="Color3" then clean[k]={v.R,v.G,v.B}; clean[k.."__c"]=true end
     end
     pcall(function() mkFolder(); writefile(path, HttpService:JSONEncode(clean)) end)
 end
@@ -219,22 +202,16 @@ end
 local DEFAULTS = {
     Ver=CFG_VER, Enabled=true,
     HoldKey=Enum.KeyCode.E, PanelKey=Enum.KeyCode.L, CloseKey=Enum.KeyCode.M, PanicKey=Enum.KeyCode.Delete,
-    -- AIM
     FOV=130, MaxDist=500, TargetPart="Head", Priority="fov",
-    Smoothness=0.15,          -- 0=snap, 0.9=muy suave
+    Smoothness=0,   -- 0=snap duro, subir para suave
     TeamCheck=false, WallCheck=true, DrawFOV=true, CameraLock=true,
     SilentAim=true, NoRecoil=true,
-    -- ESP
     PlayerESP=true, ChamsESP=true, NameESP=true, HealthESP=true, WeaponESP=true,
-    MaxESP=400,
-    -- HITBOX
-    HitboxOn=false, HitboxSize=8, HitboxAlpha=0.5,
-    -- PICKUP
-    PickupOn=true, PickupRadius=50, PickupDelay=0.08,
+    MaxESP=400, ESPRefresh=0.05,
+    HitboxOn=false, HitboxSize=10, HitboxAlpha=0.5,
+    PickupOn=true, PickupRadius=50, PickupDelay=0.1,
     PickupMoney=true, PickupWeapons=true, PickupFood=true, PickupTools=true,
-    -- HUD
-    WatermarkOn=true, StatsOn=true,
-    -- MISC
+    WatermarkOn=true, StatsOn=true, HUDWatermark=true, HUDFPS=true,
     HideName=false, HideNameTxt="...", HideBoard=false,
     AutoSave=true, AutoSaveInterval=10,
 }
@@ -246,7 +223,7 @@ local saved = loadCfg(CFG_FILE)
 if saved and saved.Ver == CFG_VER then
     for k,v in pairs(saved) do if CFG[k]~=nil then CFG[k]=v end end
 end
-CFG.FOVRadius = CFG.FOV  -- alias
+CFG.FOVRadius = CFG.FOV
 
 getgenv().BSS_Cfg = CFG
 
@@ -262,7 +239,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- COLORES
+-- COLORS
 -- ============================================================================
 local C = {
     bg    = Color3.fromRGB(6,6,8),      bg2   = Color3.fromRGB(12,12,16),
@@ -276,7 +253,6 @@ local C = {
 }
 
 local function gui()
-    if gethui then local ok,r=pcall(gethui); if ok and r then return r end end
     return LP:WaitForChild("PlayerGui")
 end
 
@@ -288,8 +264,8 @@ end
 -- STATE
 -- ============================================================================
 local aimOn      = false
-local curTarget  = nil  -- BasePart (la parte del jugador)
-local curPlr     = nil  -- Player dueño de curTarget
+local curTarget  = nil
+local curPlr     = nil
 local lastSwitch = 0
 local isFiring   = false
 local savedRot   = nil
@@ -298,8 +274,9 @@ local sessKills  = 0
 local sessItems  = 0
 local lastHPSnap = {}
 local _inCar     = false
+local lastMouseMove = 0
+local manualAimOverride = false
 
--- Caché del char local para no buscarlo cada frame
 local _lChar, _lHum, _lHRP = nil, nil, nil
 local function refreshLocal()
     _lChar = LP.Character
@@ -313,11 +290,68 @@ LP.CharacterAdded:Connect(function(c)
     _lHRP=c:FindFirstChild("HumanoidRootPart")
 end)
 
--- Viewport center — recalcular al resize
-local _vpC = Vector2.zero
+local _vpC = Vector2.new(0,0)
 local function refreshVP() local v=Camera.ViewportSize; _vpC=Vector2.new(v.X*.5,v.Y*.5) end
 refreshVP()
 Camera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshVP)
+
+local _uiCache = { hideName=nil, watermarkVisible=nil, statsVisible=nil, fovVisible=nil, fovSize=nil, fovColor=nil }
+local _hitboxOriginal = setmetatable({}, {__mode = "k"})
+local _hitboxApplied  = setmetatable({}, {__mode = "k"})
+local _espCache = setmetatable({}, {__mode = "k"})
+local _espHL   = {}
+local _espBB   = {}
+local _espRef  = setmetatable({},{__mode="k"})
+local _hbOrig  = setmetatable({},{__mode="k"})
+
+-- ============================================================================
+-- CAR CAMERA STATE
+-- ============================================================================
+local _carAimActive = false
+local _savedCamType = nil
+local _savedCamSubject = nil
+
+local function enterCarAim(hum)
+    if _carAimActive then return end
+    _carAimActive = true
+    _savedCamType = Camera.CameraType
+    _savedCamSubject = Camera.CameraSubject
+    if Camera.CameraType ~= Enum.CameraType.Scriptable then
+        Camera.CameraType = Enum.CameraType.Scriptable
+    end
+end
+
+local function exitCarAim()
+    if not _carAimActive then return end
+    _carAimActive = false
+    if _savedCamSubject then
+        pcall(function() Camera.CameraSubject = _savedCamSubject end)
+    end
+    local target = _savedCamType or Enum.CameraType.Custom
+    if Camera.CameraType ~= target then
+        Camera.CameraType = target
+    end
+    _savedCamType = nil
+    _savedCamSubject = nil
+end
+
+-- ============================================================================
+-- HIDE NAME
+-- ============================================================================
+local _origName = nil
+local function applyHideName()
+    if _uiCache.hideName == CFG.HideName and _uiCache.hideBoard == CFG.HideBoard then return end
+    _uiCache.hideName = CFG.HideName
+    _uiCache.hideBoard = CFG.HideBoard
+    pcall(function()
+        if not _origName then _origName = LP.DisplayName end
+        LP.DisplayName = CFG.HideName and (CFG.HideNameTxt or "...") or _origName
+    end)
+    pcall(function()
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideBoard)
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName)
+    end)
+end
 
 -- ============================================================================
 -- RAYCAST FILTER
@@ -376,7 +410,6 @@ local function findBestTarget()
         if px > CFG.FOVRadius then continue end
         local score = (CFG.Priority=="dist") and d3 or px
         if score < best then
-            -- wall check solo en top 3 después de sort, aquí hacemos directo
             if not CFG.WallCheck or isVisible(part, plr.Character) then
                 best=score; bestPart=part; bestPlr=plr
             end
@@ -395,6 +428,12 @@ end
 -- ============================================================================
 -- INPUT
 -- ============================================================================
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if input.Delta.Magnitude > 0.5 then lastMouseMove = tick() end
+    end
+end)
+
 UserInputService.InputBegan:Connect(function(i,gp)
     if gp then return end
     if i.KeyCode==CFG.HoldKey then aimOn=true end
@@ -406,18 +445,17 @@ UserInputService.InputBegan:Connect(function(i,gp)
     end
     if i.KeyCode==CFG.PanicKey then
         aimOn=false; CFG.Enabled=false
-        -- liberar cámara inmediatamente
         if Camera.CameraType==Enum.CameraType.Scriptable then
             Camera.CameraType=_origCamType
         end
         toast("PANIC","Todo desactivado",3)
     end
 end)
+
 UserInputService.InputEnded:Connect(function(i,gp)
     if gp then return end
     if i.KeyCode==CFG.HoldKey then
         aimOn=false
-        -- FIX: liberar cámara al soltar aim (en pie)
         if not _inCar and Camera.CameraType==Enum.CameraType.Scriptable then
             Camera.CameraType=_origCamType
         end
@@ -443,7 +481,7 @@ local function enableSilent()
         setreadonly(_mt,false)
         _mt.__namecall = newcclosure(function(self,...)
             local method = getnamecallmethod and getnamecallmethod()
-            if method=="FireServer" and curTarget and CFG.Enabled and aimOn then
+            if method=="FireServer" and curTarget and CFG.Enabled and aimOn and not manualAimOverride then
                 local args={...}
                 if #args>=1 then
                     local f=args[1]
@@ -472,54 +510,75 @@ local function disableSilent()
 end
 
 -- ============================================================================
--- HITBOX
+-- HITBOX (from v12.4 with proper apply/restore)
 -- ============================================================================
-local _hbOrig = setmetatable({},{__mode="k"})
 local function applyHB(char)
     if not CFG.HitboxOn or not char then return end
     local hrp=char:FindFirstChild("HumanoidRootPart")
     local head=char:FindFirstChild("Head")
-    if not _hbOrig[char] then
-        _hbOrig[char]={
-            hs=hrp and hrp.Size, ht=hrp and hrp.Transparency,
-            hc=hrp and hrp.CanCollide,
-            ds=head and head.Size, dt=head and head.Transparency,
-            dc=head and head.CanCollide,
+    if not _hitboxOriginal[char] then
+        _hitboxOriginal[char]={
+            hrpSize=hrp and hrp.Size, hrpT=hrp and hrp.Transparency,
+            hrpCollide=hrp and hrp.CanCollide, hrpMass=hrp and hrp.Massless, hrpTouch=hrp and hrp.CanTouch,
+            headSize=head and head.Size, headT=head and head.Transparency,
+            headCollide=head and head.CanCollide, headMass=head and head.Massless, headTouch=head and head.CanTouch,
         }
     end
     local s=Vector3.new(CFG.HitboxSize,CFG.HitboxSize,CFG.HitboxSize)
-    if hrp then hrp.Size=s; hrp.Transparency=CFG.HitboxAlpha; hrp.CanCollide=false; hrp.Massless=true end
-    if head then head.Size=s; head.Transparency=CFG.HitboxAlpha; head.CanCollide=false; head.Massless=true end
+    local t=CFG.HitboxAlpha
+    local cache = _hitboxApplied[char]
+    if not cache then cache = {}; _hitboxApplied[char] = cache end
+    if hrp then
+        if cache.hrpCollide ~= false then hrp.CanCollide=false; cache.hrpCollide=false end
+        if cache.hrpMass ~= true then hrp.Massless=true; cache.hrpMass=true end
+        if cache.hrpTouch ~= false then hrp.CanTouch=false; cache.hrpTouch=false end
+        if cache.hrpSize ~= s then hrp.Size=s; cache.hrpSize=s end
+        if cache.hrpT ~= t then hrp.Transparency=t; cache.hrpT=t end
+    end
+    if head then
+        if cache.headCollide ~= false then head.CanCollide=false; cache.headCollide=false end
+        if cache.headMass ~= true then head.Massless=true; cache.headMass=true end
+        if cache.headTouch ~= false then head.CanTouch=false; cache.headTouch=false end
+        if cache.headSize ~= s then head.Size=s; cache.headSize=s end
+        if cache.headT ~= t then head.Transparency=t; cache.headT=t end
+    end
 end
+
 local function restoreHB(char)
-    local o=_hbOrig[char]; if not o then return end
+    local o=_hitboxOriginal[char]; if not o then return end
     local hrp=char and char:FindFirstChild("HumanoidRootPart")
     local head=char and char:FindFirstChild("Head")
-    if hrp then if o.hs then hrp.Size=o.hs end; if o.ht then hrp.Transparency=o.ht end; hrp.CanCollide=o.hc end
-    if head then if o.ds then head.Size=o.ds end; if o.dt then head.Transparency=o.dt end; head.CanCollide=o.dc end
-    _hbOrig[char]=nil
+    if hrp then
+        if o.hrpSize then hrp.Size=o.hrpSize end
+        if o.hrpT ~= nil then hrp.Transparency=o.hrpT end
+        if o.hrpCollide ~= nil then hrp.CanCollide=o.hrpCollide end
+        if o.hrpMass ~= nil then hrp.Massless=o.hrpMass end
+        if o.hrpTouch ~= nil then hrp.CanTouch=o.hrpTouch end
+    end
+    if head then
+        if o.headSize then head.Size=o.headSize end
+        if o.headT ~= nil then head.Transparency=o.headT end
+        if o.headCollide ~= nil then head.CanCollide=o.headCollide end
+        if o.headMass ~= nil then head.Massless=o.headMass end
+        if o.headTouch ~= nil then head.CanTouch=o.headTouch end
+    end
+    _hitboxOriginal[char]=nil
+    _hitboxApplied[char]=nil
 end
+
 local function restoreAllHB()
-    for c in pairs(_hbOrig) do restoreHB(c) end
+    for c in pairs(_hitboxOriginal) do restoreHB(c) end
 end
+
+local function reapplyAllHB()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LP and p.Character then applyHB(p.Character) end
+    end
+end
+
 Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function(c) task.wait(0.3); if CFG.HitboxOn then applyHB(c) end end)
 end)
-
--- ============================================================================
--- HIDE NAME
--- ============================================================================
-local _origName = nil
-local function applyHideName()
-    pcall(function()
-        if not _origName then _origName=LP.DisplayName end
-        LP.DisplayName = CFG.HideName and (CFG.HideNameTxt or "...") or _origName
-    end)
-    pcall(function()
-        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideBoard)
-        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not CFG.HideName)
-    end)
-end
 
 -- ============================================================================
 -- FOV CIRCLE
@@ -535,7 +594,7 @@ Instance.new("UICorner",fovRing).CornerRadius=UDim.new(1,0)
 local fovStk=Instance.new("UIStroke"); fovStk.Color=C.acc; fovStk.Thickness=1.5; fovStk.Parent=fovRing
 
 -- ============================================================================
--- MOBILE AIM BUTTON
+-- MOBILE AIM
 -- ============================================================================
 local aimBtn=nil
 if IS_MOBILE then
@@ -560,16 +619,13 @@ if IS_MOBILE then
 end
 
 -- ============================================================================
--- ESP — Billboard en cabeza (fluido, no box 2D)
+-- ESP
 -- ============================================================================
-local _espHL  = {}   -- Highlight por player
-local _espBB  = {}   -- BillboardGui por player
-local _espRef = setmetatable({},{__mode="k"}) -- refs a children por player
-
 local function clearEspPlayer(plr)
     if _espHL[plr]  then pcall(function() _espHL[plr]:Destroy()  end); _espHL[plr]=nil  end
     if _espBB[plr]  then pcall(function() _espBB[plr]:Destroy()  end); _espBB[plr]=nil  end
     _espRef[plr]=nil
+    _espCache[plr]=nil
 end
 
 local function makeHL(char)
@@ -583,7 +639,6 @@ end
 local function makeBB(head)
     local bb=Instance.new("BillboardGui")
     bb.Name="BSS_BB"; bb.AlwaysOnTop=true
-    -- FIX: adornee siempre Head real, no fallbacks que muevan el billboard
     bb.Adornee=head; bb.Parent=head
     bb.StudsOffsetWorldSpace=Vector3.new(0,3.2,0)
     bb.Size=UDim2.fromOffset(160,70)
@@ -600,11 +655,10 @@ local function makeBB(head)
         l.Parent=bb; return l
     end
 
-    local nameLbl  = lbl("Name",  0,  13, Color3.new(1,1,1))
-    local hpLbl    = lbl("HP",    15, 11, C.hp)
-    local wepLbl   = lbl("Wep",   28, 11, C.gold)
+    local nameLbl = lbl("Name", 0, 13, Color3.new(1,1,1))
+    local hpLbl   = lbl("HP", 15, 11, C.hp)
+    local wepLbl  = lbl("Wep", 28, 11, C.gold)
 
-    -- Ícono del arma (izquierda del texto de arma)
     local wepImg=Instance.new("ImageLabel")
     wepImg.Name="WepImg"; wepImg.BackgroundTransparency=1
     wepImg.Size=UDim2.fromOffset(20,20); wepImg.Position=UDim2.new(0,4,0,27)
@@ -616,7 +670,7 @@ end
 
 local _espSubframe = 0
 local function updateESP()
-    _espSubframe = (_espSubframe+1)%2  -- actualizar datos pesados cada 2 frames
+    _espSubframe = (_espSubframe+1)%2
 
     for _,plr in ipairs(Players:GetPlayers()) do
         if plr==LP then continue end
@@ -634,7 +688,6 @@ local function updateESP()
         local dist = (Camera.CFrame.Position-hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearEspPlayer(plr); continue end
 
-        -- HIGHLIGHT
         if CFG.PlayerESP and CFG.ChamsESP then
             if not _espHL[plr] or not _espHL[plr].Parent then
                 _espHL[plr]=makeHL(char)
@@ -643,7 +696,6 @@ local function updateESP()
                 local hpR=math.clamp(hum.Health/hum.MaxHealth,0,1)
                 local fillCol = hpR>0.6 and C.hp or hpR>0.3 and C.warn or C.dng
                 _espHL[plr].FillColor=fillCol
-                -- outline = color del arma de mayor tier
                 if CFG.WeaponESP then
                     local we=getBestWeapon(plr)
                     _espHL[plr].OutlineColor = we and we.col or Color3.fromRGB(0,0,0)
@@ -655,16 +707,13 @@ local function updateESP()
             if _espHL[plr] then _espHL[plr]:Destroy(); _espHL[plr]=nil end
         end
 
-        -- BILLBOARD
         if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
             local refs = _espRef[plr]
             if not _espBB[plr] or not _espBB[plr].Parent or not refs then
-                -- FIX: siempre usar head real como adornee
                 local bb,r = makeBB(head)
                 _espBB[plr]=bb; _espRef[plr]=r; refs=r
             end
 
-            -- Escala por distancia — más lejos = más grande para compensar
             local sm = math.clamp(1 + (dist/CFG.MaxESP)*1.2, 1, 2.2)
             _espBB[plr].Size=UDim2.fromOffset(160*sm, 70*sm)
             _espBB[plr].StudsOffsetWorldSpace=Vector3.new(0, 3.2*sm, 0)
@@ -689,12 +738,10 @@ local function updateESP()
                     refs.wep.Visible=true
                     refs.wep.Text=(TIER_LABEL[we.tier] or "[?]").."  "..we.label
                     refs.wep.TextColor3=TIER_COL[we.tier] or C.acc
-                    -- ícono si hay textura
                     if refs.img then
-                        refs.img.Image = tex
+                        refs.img.Image = tex or ""
                         refs.img.ImageColor3 = we.col
-                        refs.img.Visible = (tex and tex~="")
-                        -- si hay ícono, indent el texto
+                        refs.img.Visible = (tex and tex~="") and true or false
                         refs.wep.Position = (tex and tex~="") and UDim2.new(0,26,0,28) or UDim2.new(0,0,0,28)
                     end
                 else
@@ -707,13 +754,12 @@ local function updateESP()
         end
     end
 
-    -- Limpiar jugadores que salieron
     for plr in pairs(_espHL) do if not plr.Parent then clearEspPlayer(plr) end end
-    for plr in pairs(_espBB)  do if not plr.Parent then clearEspPlayer(plr) end end
+    for plr in pairs(_espBB) do if not plr.Parent then clearEspPlayer(plr) end end
 end
 
 -- ============================================================================
--- PICKUP
+-- PICKUP (with firetouchinterest)
 -- ============================================================================
 local _lastPick=0
 local function tryPickup()
@@ -748,7 +794,9 @@ local function tryPickup()
     if picked then _lastPick=now end
 end
 
--- Kill tracker
+-- ============================================================================
+-- TRACK KILLS
+-- ============================================================================
 local function trackKills()
     for _,plr in ipairs(Players:GetPlayers()) do
         if plr==LP then continue end
@@ -783,20 +831,18 @@ local PW,PH = 430,560
 local panel = mk("Frame",{Size=UDim2.fromOffset(PW,PH),Position=UDim2.new(.5,-PW/2,.5,-PH/2),BackgroundColor3=C.bg,BorderSizePixel=0,Parent=sg})
 rnd(panel,14); stk(panel,C.brd,1.2)
 
--- Barra gradiente top
 local topBar = mk("Frame",{Size=UDim2.new(1,0,0,3),BackgroundColor3=C.acc,BorderSizePixel=0,Parent=panel})
 rnd(topBar,14)
 mk("UIGradient",{Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(120,100,255)),ColorSequenceKeypoint.new(.5,Color3.fromRGB(255,255,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(80,200,255))}),Parent=topBar})
 
--- Header
 local hdr = mk("Frame",{Size=UDim2.new(1,0,0,46),Position=UDim2.new(0,0,0,3),BackgroundColor3=Color3.fromRGB(8,8,10),BorderSizePixel=0,Parent=panel})
 
 local logoF = mk("Frame",{Size=UDim2.fromOffset(32,32),Position=UDim2.new(0,12,0.5,-16),BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,Parent=hdr})
 rnd(logoF,10); stk(logoF,Color3.fromRGB(255,255,255),1.5)
-local logoImg = mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.72,.72),BackgroundTransparency=1,Image=ICON,ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=logoF})
+mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.72,.72),BackgroundTransparency=1,Image=ICON,ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=logoF})
 
 mk("TextLabel",{Size=UDim2.new(0,200,0,18),Position=UDim2.new(0,52,0,4),BackgroundTransparency=1,Text="BSS-AIM ULTRA",TextColor3=Color3.fromRGB(255,255,255),TextSize=15,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
-mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="BlockSpin Edition  ·  v13  ·  "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
+mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
 
 local function hdrBtn(txt,xOff)
     local b=mk("TextButton",{Size=UDim2.fromOffset(28,28),Position=UDim2.new(1,xOff,0.5,-14),BackgroundColor3=C.bg3,BorderSizePixel=0,Text=txt,TextColor3=C.acc,TextSize=14,Font=Enum.Font.GothamBold,AutoButtonColor=false,Active=true,Parent=hdr,ZIndex=2})
@@ -805,8 +851,7 @@ end
 local minBtn   = hdrBtn("−",-74)
 local closeBtn = hdrBtn("×",-40)
 
--- Tabs
-local TABS     = {"AIM","ESP","HITBOX","PICKUP","SAFE"}
+local TABS     = {"AIM","ESP","HITBOX","PICKUP","HUD","SAFE"}
 local tabFrame = mk("Frame",{Size=UDim2.new(1,-20,0,32),Position=UDim2.new(0,10,0,57),BackgroundColor3=C.bg2,BorderSizePixel=0,Parent=panel})
 rnd(tabFrame,10); stk(tabFrame,C.brd,1)
 mk("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Parent=tabFrame})
@@ -839,13 +884,12 @@ for i,tname in ipairs(TABS) do
     pad(pg,2,4,0,4); pages[tname]=pg
 end
 
--- Footer
 local footer=mk("Frame",{Size=UDim2.new(1,-20,0,26),Position=UDim2.new(0,10,1,-34),BackgroundColor3=C.bg2,BorderSizePixel=0,Parent=panel})
 rnd(footer,8); stk(footer,C.brd)
 mk("TextLabel",{Size=UDim2.new(1,-16,1,0),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,Font=Enum.Font.Gotham,TextColor3=C.muted,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left,Text= IS_PC and "[L] panel  ·  [E] hold aim  ·  [Delete] panic" or "AIM = hold  ·  [M] cerrar",Parent=footer})
 
 -- ============================================================================
--- UI COMPONENTS
+-- COMPONENTS
 -- ============================================================================
 local _ord=0; local function nxt() _ord+=1; return _ord end
 
@@ -950,7 +994,7 @@ local function partPicker(page)
 end
 
 -- ============================================================================
--- PÁGINAS
+-- PAGES
 -- ============================================================================
 local ap=pages["AIM"]
 sec(ap,"AIMBOT")
@@ -958,7 +1002,7 @@ tog(ap,"Activar script","Enabled")
 tog(ap,"Camera Lock (seguir target)","CameraLock")
 tog(ap,"No Recoil","NoRecoil")
 sld(ap,"FOV","FOV",30,400,false,function(v) CFG.FOVRadius=v end)
-sld(ap,"Smoothness (0=snap 0.9=suave)","Smoothness",0,0.95,true)
+sld(ap,"Smoothness (0=snap, 0.9=suave)","Smoothness",0,0.95,true)
 sld(ap,"Distancia máx","MaxDist",100,1500,false)
 kbRow(ap,"Hold aim (teclado)","HoldKey")
 sec(ap,"FILTROS")
@@ -980,14 +1024,13 @@ sld(ep,"Rango ESP","MaxESP",50,1200,false)
 local hp=pages["HITBOX"]
 sec(hp,"HITBOX EXPANDER")
 tog(hp,"Activar hitbox","HitboxOn",function(v)
-    if v then for _,p in ipairs(Players:GetPlayers()) do if p.Character then applyHB(p.Character) end end
-    else restoreAllHB() end
+    if v then reapplyAllHB() else restoreAllHB() end
 end)
 sld(hp,"Tamaño","HitboxSize",2,28,false,function()
-    if CFG.HitboxOn then for _,p in ipairs(Players:GetPlayers()) do if p.Character then applyHB(p.Character) end end end
+    if CFG.HitboxOn then reapplyAllHB() end
 end)
 sld(hp,"Transparencia","HitboxAlpha",0,1,true,function()
-    if CFG.HitboxOn then for _,p in ipairs(Players:GetPlayers()) do if p.Character then applyHB(p.Character) end end end
+    if CFG.HitboxOn then reapplyAllHB() end
 end)
 
 local pp=pages["PICKUP"]
@@ -1001,17 +1044,20 @@ tog(pp,"Armas","PickupWeapons")
 tog(pp,"Comida","PickupFood")
 tog(pp,"Herramientas","PickupTools")
 
+local hup=pages["HUD"]
+sec(hup,"HUD")
+tog(hup,"Watermark","WatermarkOn")
+tog(hup,"Stats (kills/fps)","StatsOn")
+sec(hup,"PRIVACIDAD")
+tog(hup,"Ocultar mi nombre","HideName")
+tog(hup,"Ocultar leaderboard","HideBoard")
+
 local sp=pages["SAFE"]
 sec(sp,"KEYBINDS")
 kbRow(sp,"Panel (abrir)","PanelKey")
 kbRow(sp,"Panel (cerrar)","CloseKey")
 kbRow(sp,"Panic (desactivar todo)","PanicKey")
-sec(sp,"OPCIONES")
-tog(sp,"Watermark","WatermarkOn")
-tog(sp,"Stats (kills/fps)","StatsOn")
-tog(sp,"Ocultar mi nombre","HideName")
-tog(sp,"Ocultar leaderboard","HideBoard")
-sec(sp,"ACCIONES")
+sec(sp,"CONFIG")
 actBtn(sp,"Guardar config ahora",nil,function()
     saveCfg(CFG_FILE,CFG); dirty=false; lastSave=tick()
     toast("BSS","Config guardada",2)
@@ -1023,7 +1069,7 @@ end)
 actBtn(sp,"Reiniciar script",Color3.fromRGB(80,20,20),function()
     disableSilent(); restoreAllHB()
     if _origName then pcall(function() LP.DisplayName=_origName end) end
-    pcall(function() RunService:UnbindFromRenderStep("BSS_v13_Loop") end)
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
     _alive=false
     if Camera.CameraType==Enum.CameraType.Scriptable then Camera.CameraType=_origCamType end
     fovSG:Destroy(); sg:Destroy()
@@ -1055,7 +1101,6 @@ local function mkDrag(frame, handle)
 end
 mkDrag(panel,hdr)
 
--- Mini botón flotante (arriba centro fijo)
 local mini=mk("TextButton",{Size=UDim2.fromOffset(54,54),Position=UDim2.new(.5,-27,0,18),BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,Text="",AutoButtonColor=false,Active=true,Visible=false,ZIndex=200,Parent=sg})
 rnd(mini,27); stk(mini,Color3.fromRGB(255,255,255),1.5)
 mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.7,.7),BackgroundTransparency=1,Image=ICON,ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=mini})
@@ -1068,7 +1113,6 @@ local function openPanel()
 end
 local function closePanel()
     if not panel.Visible then return end
-    local pos=panel.AbsolutePosition
     local tw=TweenService:Create(panel,TweenInfo.new(0.16,Enum.EasingStyle.Quart,Enum.EasingDirection.In),{Size=UDim2.fromOffset(1,1)})
     tw:Play(); tw.Completed:Connect(function()
         panel.Visible=false; panel.Size=UDim2.fromOffset(PW,PH)
@@ -1083,7 +1127,7 @@ minBtn.MouseButton1Click:Connect(closePanel)
 closeBtn.MouseButton1Click:Connect(function()
     disableSilent(); restoreAllHB()
     if _origName then pcall(function() LP.DisplayName=_origName end) end
-    pcall(function() RunService:UnbindFromRenderStep("BSS_v13_Loop") end)
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
     _alive=false
     if Camera.CameraType==Enum.CameraType.Scriptable then Camera.CameraType=_origCamType end
     fovSG:Destroy(); sg:Destroy()
@@ -1103,8 +1147,7 @@ local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,IgnoreGuiInset=tru
 
 local wm=mk("Frame",{Size=UDim2.fromOffset(230,26),Position=UDim2.new(0,18,0,18),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(wm,8); stk(wm,C.acc,1)
-mk("UIGradient",{Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(100,80,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(80,200,255))}),Rotation=90,Parent=stk(wm,C.acc,0)})  -- solo para darle vida al borde
-local wmLbl=mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v13",Parent=wm})
+mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14 — Merged",Parent=wm})
 
 local stats=mk("Frame",{Size=UDim2.fromOffset(175,82),Position=UDim2.new(1,-193,0,52),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(stats,8); stk(stats,C.acc2,1)
@@ -1114,25 +1157,17 @@ local fpsCount=0; local fpsTimer=tick(); local curFPS=60
 local _stK=-1; local _stI=-1; local _stM=-1; local _stF=-1
 
 -- ============================================================================
--- BACKGROUND LOOPS
+-- LOOPS
 -- ============================================================================
-task.spawn(function()
-    while _alive do pcall(updateESP); task.wait(0.05) end
-end)
-task.spawn(function()
-    while _alive do pcall(tryPickup); task.wait(0.12) end
-end)
-task.spawn(function()
-    while _alive do pcall(trackKills); task.wait(0.25) end
-end)
-task.spawn(function()
-    while _alive do pcall(applyHideName); task.wait(2) end
-end)
+task.spawn(function() while _alive do pcall(updateESP); task.wait(CFG.ESPRefresh or 0.05) end end)
+task.spawn(function() while _alive do pcall(tryPickup); task.wait(0.12) end end)
+task.spawn(function() while _alive do pcall(trackKills); task.wait(0.25) end end)
+task.spawn(function() while _alive do pcall(applyHideName); task.wait(2) end end)
 task.spawn(function()
     while _alive do
         if CFG.HitboxOn then
             for _,p in ipairs(Players:GetPlayers()) do
-                if p~=LP and p.Character and not _hbOrig[p.Character] then applyHB(p.Character) end
+                if p~=LP and p.Character and not _hitboxOriginal[p.Character] then applyHB(p.Character) end
             end
         end
         task.wait(1)
@@ -1140,14 +1175,16 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- TARGET SCAN — Heartbeat (no RenderStep, más barato)
+-- TARGET SCAN — Heartbeat (60Hz)
 -- ============================================================================
 local _scanT=0
 RunService.Heartbeat:Connect(function()
     if not _alive then return end
+    manualAimOverride = (tick() - lastMouseMove) < 0.15
+    if manualAimOverride then curTarget=nil; curPlr=nil; return end
     if not (CFG.Enabled and aimOn) then curTarget=nil; curPlr=nil; return end
     local now=tick()
-    if now-_scanT < 0.06 then return end
+    if now-_scanT < 0.016 then return end
     _scanT=now
 
     local p,part = findBestTarget()
@@ -1157,90 +1194,84 @@ RunService.Heartbeat:Connect(function()
     elseif part and part~=curTarget then
         local curPx = screenDist(curTarget)
         local newPx = part and screenDist(part) or math.huge
-        if newPx+15 < curPx and (now-lastSwitch)>0.08 then
+        if newPx+10 < curPx and (now-lastSwitch)>0.05 then
             curTarget=part; curPlr=p; lastSwitch=now
         end
     end
 end)
 
 -- ============================================================================
--- MAIN RENDER LOOP
+-- MAIN LOOP
 -- ============================================================================
-pcall(function() RunService:UnbindFromRenderStep("BSS_v13_Loop") end)
-RunService:BindToRenderStep("BSS_v13_Loop", Enum.RenderPriority.Camera.Value+1, function(dt)
+pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Value+1, function(dt)
     if not _alive then return end
 
-    -- FPS counter
     fpsCount+=1
     if tick()-fpsTimer>=1 then curFPS=fpsCount; fpsCount=0; fpsTimer=tick() end
 
-    -- Cache del humanoid local
     _inCar = _lHum and _lHum.SeatPart~=nil
 
-    -- Silent aim on/off dinámico
-    local wantSilent = IS_PC and CFG.SilentAim and CFG.Enabled and aimOn and curTarget~=nil
+    local wantSilent = IS_PC and CFG.SilentAim and CFG.Enabled and aimOn and curTarget~=nil and not manualAimOverride
     if wantSilent and not _silentOn then enableSilent()
     elseif not wantSilent and _silentOn then disableSilent() end
 
-    -- FOV ring
     if CFG.DrawFOV and CFG.Enabled and aimOn then
         fovRing.Size=UDim2.fromOffset(CFG.FOVRadius*2,CFG.FOVRadius*2)
         fovStk.Color = curTarget and C.lock or C.acc
         fovRing.Visible=true
     else fovRing.Visible=false end
 
-    local lockActive = CFG.Enabled and aimOn and curTarget and CFG.CameraLock
+    local lockActive = CFG.Enabled and aimOn and curTarget and CFG.CameraLock and not manualAimOverride
 
     if lockActive then
         local camPos = Camera.CFrame.Position
         local ok,tPos = pcall(function() return curTarget.Position end)
-        if not ok or not tPos then curTarget=nil; curPlr=nil; goto skipAim end
-
-        if _inCar then
-            -- En vehículo: modo Scriptable, snap directo
-            if Camera.CameraType~=Enum.CameraType.Scriptable then
-                _origCamType=Camera.CameraType
-                _origCamSubject=Camera.CameraSubject
-                Camera.CameraType=Enum.CameraType.Scriptable
+        if ok and tPos then
+            if _inCar then
+                if Camera.CameraType~=Enum.CameraType.Scriptable then
+                    _origCamType=Camera.CameraType
+                    _origCamSubject=Camera.CameraSubject
+                    Camera.CameraType=Enum.CameraType.Scriptable
+                end
+                Camera.CFrame = CFrame.lookAt(camPos, tPos)
+            else
+                -- Smoothness 0 = snap duro (Scriptable), >0 = lerp en Custom
+                if CFG.Smoothness <= 0.01 then
+                    if Camera.CameraType~=Enum.CameraType.Scriptable then
+                        Camera.CameraType=Enum.CameraType.Scriptable
+                    end
+                    Camera.CFrame = CFrame.lookAt(camPos, tPos)
+                else
+                    if Camera.CameraType==Enum.CameraType.Scriptable then
+                        Camera.CameraType=_origCamType
+                    end
+                    local desired = CFrame.lookAt(camPos, tPos)
+                    local alpha = 1-(CFG.Smoothness)^(dt*60)
+                    Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha,0,1))
+                end
             end
-            Camera.CFrame = CFrame.lookAt(camPos, tPos)
         else
-            -- En pie: FIX PRINCIPAL — NO ponemos Scriptable
-            -- Solo lerpeamos el CFrame, el juego sigue controlando la cámara
-            -- Esto evita que la cámara se trabe
-            if Camera.CameraType==Enum.CameraType.Scriptable then
-                Camera.CameraType=_origCamType
-            end
-            local desired = CFrame.lookAt(camPos, tPos)
-            -- dt-compensado: igual de rápido a cualquier FPS
-            local alpha = 1-(CFG.Smoothness)^(dt*60)
-            Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha,0,1))
+            curTarget=nil; curPlr=nil
         end
     else
-        -- Liberar cámara
         if _inCar then
-            -- En vehículo sin aim: restaurar
             if Camera.CameraType==Enum.CameraType.Scriptable and _origCamSubject then
                 pcall(function() Camera.CameraSubject=_origCamSubject end)
                 Camera.CameraType=_origCamType or Enum.CameraType.Custom
             end
         else
-            -- En pie: siempre liberar Scriptable
             if Camera.CameraType==Enum.CameraType.Scriptable then
                 Camera.CameraType=_origCamType or Enum.CameraType.Custom
             end
         end
-        -- No recoil
         if CFG.NoRecoil and isFiring and savedRot and not _inCar then
             Camera.CFrame=CFrame.new(Camera.CFrame.Position)*savedRot
         end
     end
 
-    ::skipAim::
-
-    -- HUD
-    wm.Visible=CFG.WatermarkOn
-    stats.Visible=CFG.StatsOn
+    if _uiCache.wmVisible ~= CFG.WatermarkOn then wm.Visible=CFG.WatermarkOn; _uiCache.wmVisible=CFG.WatermarkOn end
+    if _uiCache.statsVisible ~= CFG.StatsOn then stats.Visible=CFG.StatsOn; _uiCache.statsVisible=CFG.StatsOn end
     if CFG.StatsOn then
         local mins=math.floor((tick()-sessStart)/60)
         if sessKills~=_stK or sessItems~=_stI or mins~=_stM or curFPS~=_stF then
@@ -1254,8 +1285,5 @@ RunService:BindToRenderStep("BSS_v13_Loop", Enum.RenderPriority.Camera.Value+1, 
     end
 end)
 
--- ============================================================================
-toast("BSS-Aim ULTRA v13","BlockSpin Edition — cargado",5)
-print("[BSS-Aim ULTRA v13] OK | dt-lerp | cam libre | ESP fluido | WeaponDB completa")
-ENDOFSCRIPT
-echo "=== DONE: $(wc -l < /home/claude/bss_ultra_v13.lua) lineas, $(wc -c < /home/claude/bss_ultra_v13.lua) bytes ==="
+toast("BSS-Aim ULTRA v14","Merged Edition — cargado",5)
+print("[BSS-Aim ULTRA v14] OK | UI v13 + Aim v12.4 + Hard Lock + Smoothness + Weapon Icons")

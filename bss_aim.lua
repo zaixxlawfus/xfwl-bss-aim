@@ -348,21 +348,32 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- ANTI-FREEZE: guard de CameraType + restauración pre-aim
+-- CAR CAMERA STATE — snap directo, restauro CameraSubject
 -- ============================================================================
-local _camTypeApplied = false
-local _lastCamType = Camera.CameraType
-local _preAimCamType = nil          -- guarda el tipo original antes de aim en carro
-local _carAimLerpStarted = false
+local _carAimActive = false
+local _savedCamType = nil
+local _savedCamSubject = nil
+local _carSeat = nil
 
-local function setCamType(t)
-    if Camera.CameraType ~= t then
-        Camera.CameraType = t
-        _camTypeApplied = false
-        _lastCamType = t
-    else
-        _camTypeApplied = true
+local function enterCarAim(hum)
+    if _carAimActive then return end
+    _carAimActive = true
+    _savedCamType = Camera.CameraType
+    _savedCamSubject = Camera.CameraSubject
+    _carSeat = hum and hum.SeatPart
+    Camera.CameraType = Enum.CameraType.Scriptable
+end
+
+local function exitCarAim()
+    if not _carAimActive then return end
+    _carAimActive = false
+    if _savedCamSubject then
+        pcall(function() Camera.CameraSubject = _savedCamSubject end)
     end
+    Camera.CameraType = _savedCamType or Enum.CameraType.Custom
+    _savedCamType = nil
+    _savedCamSubject = nil
+    _carSeat = nil
 end
 
 -- ============================================================================
@@ -1108,7 +1119,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- MAIN LOOP — camera lock con anti-freeze + fix carro
+-- MAIN LOOP — car aim v2 (snap directo + CameraSubject restore)
 -- ============================================================================
 local _lastKills = -1; local _lastPickups = -1; local _lastMinutes = -1; local _lastFPS = -1
 
@@ -1139,52 +1150,35 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     local inCar = hum and hum.SeatPart ~= nil
 
-    -- ── CAMERA LOCK con grace period y fix carro ──────────────────────
+    -- ── CAMERA LOCK ────────────────────────────────────────────────────
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
         if inCar then
-            if _preAimCamType == nil then _preAimCamType = Camera.CameraType end
-            setCamType(Enum.CameraType.Scriptable)
-            if _camTypeApplied then
-                local camPos = Camera.CFrame.Position
-                local toTarget = currentTarget.Position - camPos
-                if toTarget.Magnitude > 1.5 then
-                    local upVec = Camera.CFrame.UpVector
-                    if math.abs(upVec:Dot(toTarget.Unit)) > 0.97 then
-                        upVec = Vector3.new(0, 1, 0)
-                    end
-                    local desired = CFrame.lookAt(camPos, camPos + toTarget.Unit * 10, upVec)
-                    -- lerp rápido: elimina pitch-oscillation del vehicle cam
-                    Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(dt * 40, 0.6, 1))
+            enterCarAim(hum)
+            local camPos = Camera.CFrame.Position
+            local toTarget = currentTarget.Position - camPos
+            if toTarget.Magnitude > 2 then
+                local upVec = Vector3.new(0, 1, 0)
+                if math.abs(upVec:Dot(toTarget.Unit)) > 0.97 then
+                    upVec = Vector3.new(0, 0, 1)
                 end
+                Camera.CFrame = CFrame.lookAt(camPos, currentTarget.Position, upVec)
             end
         else
-            setCamType(Enum.CameraType.Custom)
-            if _camTypeApplied then
-                Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
+            if _carAimActive then exitCarAim() end
+            if Camera.CameraType ~= Enum.CameraType.Custom then
+                Camera.CameraType = Enum.CameraType.Custom
             end
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
         end
     else
-        if inCar then
-            if _preAimCamType ~= nil then
-                if Camera.CameraType ~= _preAimCamType then
-                    setCamType(_preAimCamType)
-                else
-                    _camTypeApplied = true
-                end
-                _preAimCamType = nil
-            else
-                _camTypeApplied = true
-            end
-        else
-            setCamType(Enum.CameraType.Custom)
-            if CFG.NoRecoil and isFiring and savedShotRotation then
-                if _camTypeApplied then
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedShotRotation
-                end
-            end
+        if _carAimActive then exitCarAim() end
+        if not inCar and Camera.CameraType ~= Enum.CameraType.Custom then
+            Camera.CameraType = Enum.CameraType.Custom
+        end
+        if CFG.NoRecoil and isFiring and savedShotRotation and not inCar then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedShotRotation
         end
     end
-    _camTypeApplied = true
 
     watermark.Visible = CFG.HUDWatermark
 
@@ -1199,5 +1193,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     else statsHUD.Visible = false end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "Car Aim fix, No Recoil, Anti-Freeze mira", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — car aim fixed")
+notify("BSS-Aim ULTRA v12.4", "Car Aim fix v2 — snap + CameraSubject", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — car aim v2")

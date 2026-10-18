@@ -1287,4 +1287,192 @@ local function closePanel()
         tw.Completed:Connect(function()
             panel.Visible = false; panel.Size = UDim2.fromOffset(W,H)
             miniBtn.Visible = true; miniBtn.Size = UDim2.fromOffset(1,1)
-            Tween
+            TweenService:Create(miniBtn, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(56,56) }):Play()
+        end)
+    end
+end
+
+minBtn.MouseButton1Click:Connect(closePanel)
+closeBtn.MouseButton1Click:Connect(function()
+    uninstallSilentHook()
+    _scriptActive = false
+    pcall(function() if originalDisplayName then LocalPlayer.DisplayName = originalDisplayName end end)
+    pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+    restoreAllHitboxes()
+    espScreen:Destroy(); sg:Destroy()
+    for plr in pairs(pESP) do clearESP(plr) end
+    getgenv().BSS_Aim_Loaded = false
+end)
+
+UserInputService.InputBegan:Connect(function(i, gp)
+    if gp then return end
+    if i.KeyCode == CFG.PanelKey then openPanel() end
+    if i.KeyCode == CFG.CloseKey then closePanel() end
+end)
+
+-- ============================================================================
+-- HUD
+-- ============================================================================
+local hudScreen = Instance.new("ScreenGui")
+hudScreen.Name = "BSS_HUD_Ultra"; hudScreen.ResetOnSpawn = false; hudScreen.IgnoreGuiInset = true; hudScreen.DisplayOrder = 95; hudScreen.Parent = getParent()
+
+local watermark = Instance.new("Frame")
+watermark.Size = UDim2.fromOffset(240,26); watermark.Position = UDim2.new(0,20,0,20)
+watermark.BackgroundColor3 = C.bg; watermark.BackgroundTransparency = 0.25; watermark.BorderSizePixel = 0; watermark.ZIndex = 150; watermark.Parent = hudScreen
+Instance.new("UICorner", watermark).CornerRadius = UDim.new(0,8)
+local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.Thickness = 1.2; wmStroke.Parent = watermark
+local wmLabel = Instance.new("TextLabel")
+wmLabel.Size = UDim2.new(1,-16,1,0); wmLabel.Position = UDim2.new(0,10,0,0); wmLabel.BackgroundTransparency = 1
+wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
+wmLabel.Text = "BSS-Aim Ultra v12.4"; wmLabel.Parent = watermark
+
+local statsHUD = Instance.new("Frame")
+statsHUD.Size = UDim2.fromOffset(180,90); statsHUD.Position = UDim2.new(1,-200,0,60)
+statsHUD.BackgroundColor3 = C.bg; statsHUD.BackgroundTransparency = 0.25; statsHUD.BorderSizePixel = 0; statsHUD.ZIndex = 150; statsHUD.Parent = hudScreen
+Instance.new("UICorner", statsHUD).CornerRadius = UDim.new(0,8)
+local stStroke = Instance.new("UIStroke"); stStroke.Color = C.accent2; stStroke.Thickness = 1.2; stStroke.Parent = statsHUD
+local stLabel = Instance.new("TextLabel")
+stLabel.Size = UDim2.new(1,-16,1,-12); stLabel.Position = UDim2.new(0,10,0,6); stLabel.BackgroundTransparency = 1
+stLabel.Font = Enum.Font.Code; stLabel.TextSize = 12; stLabel.TextColor3 = C.fg; stLabel.TextXAlignment = Enum.TextXAlignment.Left
+stLabel.TextYAlignment = Enum.TextYAlignment.Top; stLabel.TextWrapped = true; stLabel.Text = ""; stLabel.Parent = statsHUD
+
+local fpsCount = 0; local fpsTimer = tick(); local currentFPS = 60
+
+-- ============================================================================
+-- BACKGROUND LOOPS
+-- ============================================================================
+task.spawn(function()
+    while _scriptActive do pcall(updateHighlights); task.wait(0.25) end
+end)
+task.spawn(function()
+    while _scriptActive do pcall(updateBillboards); task.wait(CFG.ESPRefresh or 0.1) end
+end)
+task.spawn(function()
+    while _scriptActive do pcall(tryPickup); task.wait(0.2) end
+end)
+task.spawn(function()
+    while _scriptActive do pcall(trackKills); task.wait(0.25) end
+end)
+task.spawn(function()
+    while _scriptActive do pcall(applyHideName); task.wait(1.5) end
+end)
+task.spawn(function()
+    while _scriptActive do
+        if CFG.HitboxExpander then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character and not _hitboxOriginal[plr.Character] then
+                    applyHitbox(plr.Character)
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+-- ============================================================================
+-- TARGET SCAN — Heartbeat 10 Hz
+-- ============================================================================
+local _lastScan = 0
+RunService.Heartbeat:Connect(function()
+    if not _scriptActive then return end
+    if not (CFG.Enabled and (aimOn or CFG.TriggerBot)) then
+        currentTarget = nil
+        return
+    end
+    local now = tick()
+    if now - _lastScan < 0.1 then return end
+    _lastScan = now
+
+    local _, bestPart, bestScore = getTargetWithScore()
+    if targetDead() then
+        if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
+    elseif bestPart and bestPart ~= currentTarget then
+        if bestScore + 40 < targetPx() and (now - lastSwitch) > 0.3 then currentTarget = bestPart; lastSwitch = now end
+    end
+    if currentTarget and targetPx() > CFG.FOVRadius * 1.2 then
+        if bestPart then currentTarget = bestPart; lastSwitch = now else currentTarget = nil end
+    end
+end)
+
+-- ============================================================================
+-- MAIN LOOP — solo cámara + HUD (early-exit cuando idle)
+-- ============================================================================
+local _lastKills = -1; local _lastPickups = -1; local _lastMinutes = -1; local _lastFPS = -1
+
+pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Value + 1, function(dt)
+    if not _scriptActive then return end
+
+    fpsCount += 1
+    if tick() - fpsTimer >= 1 then currentFPS = fpsCount; fpsCount = 0; fpsTimer = tick() end
+
+    -- silent aim hook dinámico (solo cuando aim + target)
+    local wantHook = CFG.SilentAim and aimOn and currentTarget and IS_PC
+    if wantHook and not silentHookInstalled then installSilentHook()
+    elseif not wantHook and silentHookInstalled then uninstallSilentHook() end
+
+    local aimActive = CFG.Enabled and aimOn
+    local lockActive = aimActive and currentTarget and CFG.CameraLock
+
+    -- FOV circle
+    if CFG.DrawFOV and aimActive then
+        local wantSize = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
+        local wantColor = currentTarget and C.aimLock or C.accent
+        if _uiCache.fovVisible ~= true then fovCircle.Visible = true; _uiCache.fovVisible = true end
+        if _uiCache.fovSize ~= wantSize then fovCircle.Size = wantSize; _uiCache.fovSize = wantSize end
+        if _uiCache.fovColor ~= wantColor then fovStroke.Color = wantColor; _uiCache.fovColor = wantColor end
+    else
+        if _uiCache.fovVisible ~= false then fovCircle.Visible = false; _uiCache.fovVisible = false end
+    end
+
+    -- camera lock (solo si vale la pena)
+    if lockActive then
+        local inCar = _localHum and _localHum.SeatPart ~= nil
+        if inCar then
+            enterCarAim(_localHum)
+            local camPos = Camera.CFrame.Position
+            local toTarget = currentTarget.Position - camPos
+            if toTarget.Magnitude > 2 then
+                local upVec = Vector3.new(0, 1, 0)
+                if math.abs(upVec:Dot(toTarget.Unit)) > 0.97 then
+                    upVec = Vector3.new(0, 0, 1)
+                end
+                Camera.CFrame = CFrame.lookAt(camPos, currentTarget.Position, upVec)
+            end
+        else
+            if _carAimActive then exitCarAim() end
+            if Camera.CameraType ~= Enum.CameraType.Custom then
+                Camera.CameraType = Enum.CameraType.Custom
+            end
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentTarget.Position)
+        end
+    else
+        if _carAimActive then exitCarAim() end
+        -- no tocar nada más si no estábamos en car aim
+        if _localHum and not _localHum.SeatPart and Camera.CameraType == Enum.CameraType.Scriptable then
+            Camera.CameraType = Enum.CameraType.Custom
+        end
+        if CFG.NoRecoil and isFiring and savedShotRotation and _localHum and not _localHum.SeatPart then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedShotRotation
+        end
+    end
+
+    -- HUD
+    if _uiCache.watermarkVisible ~= CFG.HUDWatermark then watermark.Visible = CFG.HUDWatermark; _uiCache.watermarkVisible = CFG.HUDWatermark end
+
+    if CFG.HUDFPS then
+        if _uiCache.statsVisible ~= true then statsHUD.Visible = true; _uiCache.statsVisible = true end
+        local now = tick()
+        local minutes = math.floor((now - sessionStart) / 60)
+        if sessionKills ~= _lastKills or sessionPickups ~= _lastPickups or minutes ~= _lastMinutes or currentFPS ~= _lastFPS then
+            _lastKills = sessionKills; _lastPickups = sessionPickups; _lastMinutes = minutes; _lastFPS = currentFPS
+            stLabel.Text = string.format("Kills:    %d\nPickups:  %d\nSession:  %dm\nFPS:      %d", sessionKills, sessionPickups, minutes, currentFPS)
+            statsHUD.Size = UDim2.fromOffset(180, 76)
+        end
+    else
+        if _uiCache.statsVisible ~= false then statsHUD.Visible = false; _uiCache.statsVisible = false end
+    end
+end)
+
+notify("BSS-Aim ULTRA v12.4", "Lag fix raíz — kill __index + culling", 6)
+print("[BSS-Aim ULTRA v12.4] cargado — lag raíz arreglado")

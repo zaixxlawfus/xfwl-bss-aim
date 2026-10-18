@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v12.6
--- Car Aim Fix (Custom + UpVector), Hitbox Heavy, Pickup Instantáneo, ESP Armas
+-- BSS-Aim ULTRA v12.7
+-- Stealth Pickup, Body Selector, Extended ESP, Anti-Car Spin
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -158,7 +158,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 16
+local CONFIG_VERSION = 17 -- Subido para forzar el nuevo MaxESP y TargetPart
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -236,7 +236,7 @@ local DEFAULTS = {
     FOV = 130,
     FOVRadius = 130,
     MaxDistance = 500,
-    TargetPart = "Head",
+    TargetPart = "Head", -- Aquí guardamos la parte del cuerpo
     TeamCheck = false,
     WallCheck = true,
     DrawFOV = true,
@@ -254,11 +254,11 @@ local DEFAULTS = {
     HitboxExpander = false,
     HitboxSize = 10,
     HitboxTransparency = 0.5,
-    MaxESP = 400,
+    MaxESP = 1500, -- ESP AUMENTADO
     ESPRefresh = 0.1,
     ESPColor = {1, 1, 1},
     AutoPickup = true,
-    PickupRadius = 50,
+    PickupRadius = 60, -- Un poco más de radio para chupar rápido
     PickupDelay = 0.1,
     PickupMoney = true,
     PickupWeapons = true,
@@ -363,13 +363,22 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- HIDE NAME
+-- HIDE NAME (ROBUSTO)
 -- ============================================================================
 local originalDisplayName = nil
 local function applyHideName()
+    if _uiCache and _uiCache.hideName == CFG.HideName and _uiCache.hideBoard == CFG.HideLeaderboard then return end
+    if not _uiCache then _uiCache = {} end
+    _uiCache.hideName = CFG.HideName
+    _uiCache.hideBoard = CFG.HideLeaderboard
+    
     pcall(function()
         if originalDisplayName == nil then originalDisplayName = LocalPlayer.DisplayName end
-        if CFG.HideName then LocalPlayer.DisplayName = CFG.HideNameText or "..." else LocalPlayer.DisplayName = originalDisplayName end
+        if CFG.HideName then 
+            LocalPlayer.DisplayName = "" 
+        else 
+            LocalPlayer.DisplayName = originalDisplayName 
+        end
     end)
     pcall(function()
         StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, not CFG.HideLeaderboard)
@@ -552,7 +561,7 @@ if IS_PC and CFG.SilentAim then
 end
 
 -- ============================================================================
--- HITBOX HEAVY (SISTEMA SEGURO + CACHÉ)
+-- HITBOX HEAVY
 -- ============================================================================
 local _hitboxOriginal = setmetatable({}, {__mode = "k"})
 local _hitboxApplied = setmetatable({}, {__mode = "k"})
@@ -600,21 +609,12 @@ local function restoreHitbox(char)
     local head = char:FindFirstChild("Head")
     
     if hrp then
-        hrp.Size = orig.hrpSize
-        hrp.Transparency = orig.hrpT
-        hrp.CanCollide = orig.hrpCollide
-        hrp.Massless = orig.hrpMass
-        hrp.CanTouch = orig.hrpTouch
+        hrp.Size = orig.hrpSize; hrp.Transparency = orig.hrpT; hrp.CanCollide = orig.hrpCollide; hrp.Massless = orig.hrpMass; hrp.CanTouch = orig.hrpTouch
     end
     if head then
-        head.Size = orig.headSize
-        head.Transparency = orig.headT
-        head.CanCollide = orig.headCollide
-        head.Massless = orig.headMass
-        head.CanTouch = orig.headTouch
+        head.Size = orig.headSize; head.Transparency = orig.headT; head.CanCollide = orig.headCollide; head.Massless = orig.headMass; head.CanTouch = orig.headTouch
     end
-    _hitboxOriginal[char] = nil
-    _hitboxApplied[char] = nil
+    _hitboxOriginal[char] = nil; _hitboxApplied[char] = nil
 end
 
 local function restoreAllHitboxes()
@@ -632,7 +632,7 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ============================================================================
--- ESP SYSTEM (CON FIX DE ARMAS Y TIERS)
+-- ESP SYSTEM
 -- ============================================================================
 local pESP = {}
 local tESP = {}
@@ -673,8 +673,7 @@ local function makeBB(head)
     local wepImg = Instance.new("ImageLabel")
     wepImg.Name = "WepImg"; wepImg.BackgroundTransparency = 1
     wepImg.Size = UDim2.fromOffset(16, 16); wepImg.Position = UDim2.new(0, 4, 0, 29)
-    wepImg.ScaleType = Enum.ScaleType.Fit; wepImg.Image = ""
-    wepImg.Visible = false
+    wepImg.ScaleType = Enum.ScaleType.Fit; wepImg.Image = ""; wepImg.Visible = false
     wepImg.Parent = bb
 
     return bb, {name=nameLbl, hp=hpLbl, wep=wepLbl, img=wepImg}
@@ -688,8 +687,7 @@ local function updateESP()
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer or sameTeam(plr) or not alive(plr) then
-            clearESP(plr)
-            continue
+            clearESP(plr); continue
         end
         
         local char = plr.Character
@@ -784,7 +782,7 @@ local function updateESP()
 end
 
 -- ============================================================================
--- PICKUP INSTANTÁNEO + LOOP DE RESPALDO
+-- PICKUP STEALTH (SIN TELETRANSPORTAR AL TORSO)
 -- ============================================================================
 local lastPickup = 0
 local function grabItem(m)
@@ -795,6 +793,10 @@ local function grabItem(m)
     local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
     if not part then return false end
     
+    -- Verificamos distancia para no chupar cosas del otro lado del mapa
+    local d = (hrp.Position - part.Position).Magnitude
+    if d > (CFG.PickupRadius * 2) then return false end
+
     local n = m.Name:lower()
     local ok = false
     if n:find("money") or n:find("cash") then ok = CFG.PickupMoney
@@ -805,9 +807,7 @@ local function grabItem(m)
     
     if ok then
         pcall(function()
-            if m:IsA("Model") then m:PivotTo(CFrame.new(hrp.Position))
-            elseif part:IsA("BasePart") then part.CFrame = CFrame.new(hrp.Position) end
-            
+            -- FIX DEL BUG DEL TORSO: Solo simulamos el toque, NO movemos el item.
             if firetouchinterest then
                 firetouchinterest(hrp, part, 0)
                 task.defer(function() firetouchinterest(hrp, part, 1) end)
@@ -818,18 +818,20 @@ local function grabItem(m)
     return false
 end
 
+-- Evento instantáneo
 task.spawn(function()
     local folder = Workspace:WaitForChild("DroppedItems", 10)
     if folder then
         folder.ChildAdded:Connect(function(m)
             if getgenv().BSS_Aim_Loaded and CFG.AutoPickup then
-                task.wait(0.05)
+                task.wait(0.1) -- Mini delay para que el servidor registre la física
                 if grabItem(m) then sessionPickups += 1 end
             end
         end)
     end
 end)
 
+-- Respaldo
 local function tryPickupLoop()
     if not CFG.AutoPickup then return end
     local now = tick()
@@ -881,7 +883,7 @@ local function corner(p, r) return new("UICorner", { CornerRadius = UDim.new(0, 
 local function neonStroke(p, color) return new("UIStroke", { Color = color or C.accent, Thickness = 1.4, Parent = p }) end
 
 local sg = new("ScreenGui", { Name = "BSS_Aim_Ultra", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 100, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = getParent() })
-local W, H = 420, 550
+local W, H = 420, 560
 local FONT_LABEL = 11; local FONT_SMALL = 10; local ROW_H = 34; local TAB_H = 30
 
 local panel = new("Frame", { Size = UDim2.fromOffset(W, H), Position = UDim2.new(0.5, -W/2, 0.5, -H/2), BackgroundColor3 = C.bg, BackgroundTransparency = 0, BorderSizePixel = 0, Parent = sg })
@@ -894,7 +896,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.6", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.7", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1019,6 +1021,30 @@ local function actionBtn(page, label, color, onClick)
     b.MouseButton1Click:Connect(onClick)
 end
 
+-- Selector de partes del cuerpo (Para el Aimbot)
+local BPARTS = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"}
+local function partPicker(page)
+    local row = new("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.bg2, BorderSizePixel = 0, LayoutOrder = nextOrder(), Parent = page })
+    corner(row, 9); neonStroke(row, C.border)
+    new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(.42, 0, 1, 0), Font = Enum.Font.GothamMedium, Text = "Objetivo", TextColor3 = C.fg, TextSize = FONT_LABEL, TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+    local pv = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(.42, 0, .5, -11), BackgroundColor3 = C.bg3, Text = "‹", TextColor3 = C.accent, TextSize = 14, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, BorderSizePixel = 0, Parent = row })
+    corner(pv, 6)
+    local pl = new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.new(.42, 26, 0, 0), Size = UDim2.new(0, 105, 1, 0), Font = Enum.Font.GothamBold, Text = CFG.TargetPart, TextColor3 = C.accent, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row })
+    local nx = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -32, .5, -11), BackgroundColor3 = C.bg3, Text = "›", TextColor3 = C.accent, TextSize = 14, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, BorderSizePixel = 0, Parent = row })
+    corner(nx, 6)
+    
+    local function ci() for i, v in ipairs(BPARTS) do if v == CFG.TargetPart then return i end end; return 1 end
+    local function si(i) 
+        i = ((i - 1) % #BPARTS) + 1
+        CFG.TargetPart = BPARTS[i]
+        pl.Text = CFG.TargetPart
+        curTarget = nil
+        scheduleSave()
+    end
+    pv.MouseButton1Click:Connect(function() si(ci() - 1) end)
+    nx.MouseButton1Click:Connect(function() si(ci() + 1) end)
+end
+
 -- ============================================================================
 -- PAGES POPULATE
 -- ============================================================================
@@ -1033,6 +1059,8 @@ keybindRow(aimPage, "Apuntar (Hold)", "HoldKey")
 section(aimPage, "FILTROS")
 toggle(aimPage, "Wall check", "WallCheck")
 if IS_PC then toggle(aimPage, "Silent aim", "SilentAim") end
+section(aimPage, "OBJETIVO")
+partPicker(aimPage)
 
 local espPage = pages["ESP"]
 section(espPage, "VISUAL")
@@ -1040,8 +1068,8 @@ toggle(espPage, "Activar ESP", "PlayerESP")
 toggle(espPage, "Cuerpo iluminado", "ChamsESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
-toggle(espPage, "Arma equipada (Fix)", "WeaponESP")
-slider(espPage, "Rango ESP", "MaxESP", 50, 1500, false)
+toggle(espPage, "Arma equipada", "WeaponESP")
+slider(espPage, "Rango ESP", "MaxESP", 50, 5000, false) -- Rango extendido a 5000
 
 local hitboxPage = pages["HITBOX"]
 section(hitboxPage, "EXPANDER")
@@ -1062,7 +1090,7 @@ slider(hitboxPage, "Transparencia", "HitboxTransparency", 0, 1, true, function(v
 end)
 
 local pickPage = pages["PICKUP"]
-section(pickPage, "AUTO PICKUP (INSTANTÁNEO)")
+section(pickPage, "AUTO PICKUP (STEALTH)")
 toggle(pickPage, "Activar pickup", "AutoPickup")
 slider(pickPage, "Radio", "PickupRadius", 5, 100, false)
 slider(pickPage, "Delay de respaldo", "PickupDelay", 0.02, 0.5, true)
@@ -1076,7 +1104,7 @@ local hudPage = pages["HUD"]
 section(hudPage, "HUD")
 toggle(hudPage, "Watermark", "HUDWatermark")
 toggle(hudPage, "Stats (FPS/Ping)", "HUDFPS")
-section(hudPage, "HIDE NAME")
+section(hudPage, "PRIVACIDAD")
 toggle(hudPage, "Ocultar mi nombre", "HideName")
 toggle(hudPage, "Ocultar leaderboard", "HideLeaderboard")
 
@@ -1183,7 +1211,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v12.6"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v12.7"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
@@ -1262,7 +1290,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     else fovCircle.Visible = false end
 
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        -- CAR FIX: Forzamos Custom siempre, para que la cámara siga al vehiculo/jugador
         if Camera.CameraType ~= Enum.CameraType.Custom then
             Camera.CameraType = Enum.CameraType.Custom
         end
@@ -1270,11 +1297,9 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         local camPos = Camera.CFrame.Position
         local tPos = currentTarget.Position
         
-        -- FIX DEL GIMBAL LOCK (Cámara loca en el carro)
+        -- ANTI-GIMBAL LOCK
         local lookDir = (tPos - camPos).Unit
         local upVec = Vector3.new(0, 1, 0)
-        
-        -- Si el enemigo está casi perfectamente arriba o abajo, cambiamos el eje para que no se voltee
         if math.abs(lookDir.Y) > 0.99 then
             upVec = Vector3.new(0, 0, 1)
         end
@@ -1314,5 +1339,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.6", "Car Camera Fix + UpVector activo", 6)
-print("[BSS-Aim ULTRA v12.6] cargado - Car Fix & Heavy Hitbox")
+notify("BSS-Aim ULTRA v12.7", "Stealth Pickup + Body Selector", 6)
+print("[BSS-Aim ULTRA v12.7] cargado - Stealth Pickup activo")

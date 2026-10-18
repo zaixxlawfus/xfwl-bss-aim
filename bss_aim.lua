@@ -1,5 +1,5 @@
 -- ============================================================================
--- BSS-Aim ULTRA v14.3 — FIX CAMERA SPIN + HARD HEAD SNAP
+-- BSS-Aim ULTRA v15.0 — PRO CAMERA FIX
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -152,10 +152,10 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 -- ============================================================================
 -- CONFIG
 -- ============================================================================
-local CFG_FOLDER  = "BSS_Ultra_v14"
+local CFG_FOLDER  = "BSS_Ultra_v15"
 local CFG_FILE    = CFG_FOLDER.."/config.json"
 local HAS_IO      = (writefile and readfile and isfile and makefolder) and true or false
-local CFG_VER     = 23
+local CFG_VER     = 25
 
 local function mkFolder()
     if not HAS_IO then return end
@@ -301,37 +301,6 @@ local _espBB   = {}
 local _espRef  = setmetatable({},{__mode="k"})
 
 -- ============================================================================
--- CAR CAMERA STATE
--- ============================================================================
-local _carAimActive = false
-local _savedCamType = nil
-local _savedCamSubject = nil
-
-local function enterCarAim(hum)
-    if _carAimActive then return end
-    _carAimActive = true
-    _savedCamType = Camera.CameraType
-    _savedCamSubject = Camera.CameraSubject
-    if Camera.CameraType ~= Enum.CameraType.Scriptable then
-        Camera.CameraType = Enum.CameraType.Scriptable
-    end
-end
-
-local function exitCarAim()
-    if not _carAimActive then return end
-    _carAimActive = false
-    if _savedCamSubject then
-        pcall(function() Camera.CameraSubject = _savedCamSubject end)
-    end
-    local target = _savedCamType or Enum.CameraType.Custom
-    if Camera.CameraType ~= target then
-        Camera.CameraType = target
-    end
-    _savedCamType = nil
-    _savedCamSubject = nil
-end
-
--- ============================================================================
 -- HIDE NAME
 -- ============================================================================
 local _origName = nil
@@ -436,21 +405,13 @@ UserInputService.InputBegan:Connect(function(i,gp)
     end
     if i.KeyCode==CFG.PanicKey then
         aimOn=false; CFG.Enabled=false
-        if Camera.CameraType==Enum.CameraType.Scriptable then
-            Camera.CameraType=_origCamType
-        end
         toast("PANIC","Todo desactivado",3)
     end
 end)
 
 UserInputService.InputEnded:Connect(function(i,gp)
     if gp then return end
-    if i.KeyCode==CFG.HoldKey then
-        aimOn=false
-        if not _inCar and Camera.CameraType==Enum.CameraType.Scriptable then
-            Camera.CameraType=_origCamType
-        end
-    end
+    if i.KeyCode==CFG.HoldKey then aimOn=false end
     if i.UserInputType==Enum.UserInputType.MouseButton1 or i.KeyCode==Enum.KeyCode.ButtonR2 then
         isFiring=false; savedRot=nil
     end
@@ -833,7 +794,7 @@ rnd(logoF,10); stk(logoF,Color3.fromRGB(255,255,255),1.5)
 mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.72,.72),BackgroundTransparency=1,Image=ICON,ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=logoF})
 
 mk("TextLabel",{Size=UDim2.new(0,200,0,18),Position=UDim2.new(0,52,0,4),BackgroundTransparency=1,Text="BSS-AIM ULTRA",TextColor3=Color3.fromRGB(255,255,255),TextSize=15,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
-mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="Merged Edition · v14.3 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
+mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),BackgroundTransparency=1,Text="PRO EDITION · v15.0 · "..(IS_PC and "PC" or "Mobile"),TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
 
 local function hdrBtn(txt,xOff)
     local b=mk("TextButton",{Size=UDim2.fromOffset(28,28),Position=UDim2.new(1,xOff,0.5,-14),BackgroundColor3=C.bg3,BorderSizePixel=0,Text=txt,TextColor3=C.acc,TextSize=14,Font=Enum.Font.GothamBold,AutoButtonColor=false,Active=true,Parent=hdr,ZIndex=2})
@@ -1137,7 +1098,7 @@ local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,IgnoreGuiInset=tru
 
 local wm=mk("Frame",{Size=UDim2.fromOffset(230,26),Position=UDim2.new(0,18,0,18),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(wm,8); stk(wm,C.acc,1)
-mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v14.3",Parent=wm})
+mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,Text="BSS-Aim ULTRA v15.0",Parent=wm})
 
 local stats=mk("Frame",{Size=UDim2.fromOffset(175,82),Position=UDim2.new(1,-193,0,52),BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
 rnd(stats,8); stk(stats,C.acc2,1)
@@ -1224,21 +1185,19 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
                     _origCamSubject=Camera.CameraSubject
                     Camera.CameraType=Enum.CameraType.Scriptable
                 end
-                Camera.CFrame = CFrame.new(camPos, tPos) * CFrame.Angles(0,0,0)
+                Camera.CFrame = CFrame.new(camPos, tPos)
             else
-                if Camera.CameraType~=Enum.CameraType.Scriptable then
-                    _origCamType=Camera.CameraType
-                    _origCamSubject=Camera.CameraSubject
-                    Camera.CameraType=Enum.CameraType.Scriptable
+                -- FIX PRO: Usar Custom y rotar la cámara para no perder el tracking del jugador
+                if Camera.CameraType~=Enum.CameraType.Custom then
+                    Camera.CameraType=Enum.CameraType.Custom
                 end
-                -- FIX DEL SPIN: CFrame.new + UpVector fijo
-                local dir = (tPos - camPos).Unit
-                if math.abs(dir.Y) < 0.99 then
-                    Camera.CFrame = CFrame.new(camPos, tPos)
-                else
-                    -- Si está justo arriba/abajo, forzamos un up vector para que no voltee
-                    Camera.CFrame = CFrame.lookAt(camPos, tPos, Vector3.new(0, 0, 1))
+                -- Cálculo matemático para evitar el Gimbal Lock (spin) cuando el target está muy arriba o muy abajo
+                local lookDir = (tPos - camPos).Unit
+                local upVec = Vector3.new(0, 1, 0)
+                if math.abs(lookDir.Y) > 0.99 then
+                    upVec = Vector3.new(0, 0, 1) -- Eje de emergencia
                 end
+                Camera.CFrame = CFrame.lookAt(camPos, tPos, upVec)
             end
         else
             curTarget=nil; curPlr=nil
@@ -1251,7 +1210,7 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
             end
         else
             if Camera.CameraType==Enum.CameraType.Scriptable then
-                Camera.CameraType=_origCamType or Enum.CameraType.Custom
+                Camera.CameraType=Enum.CameraType.Custom
             end
         end
         if CFG.NoRecoil and isFiring and savedRot and not _inCar then
@@ -1274,5 +1233,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-toast("BSS-Aim ULTRA v14.3","Fix Camera Spin + Head Snap",5)
-print("[BSS-Aim ULTRA v14.3] OK | CFrame.new + UpVector fix")
+toast("BSS-Aim ULTRA v15.0","Pro Camera Fix activo",5)
+print("[BSS-Aim ULTRA v15.0] OK | Custom Camera + UpVector dinámico")

@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v12.7
--- Stealth Pickup, Body Selector, Extended ESP, Anti-Car Spin
+-- BSS-Aim ULTRA v12.9
+-- Full Weapon DB, Stealth Pickup, Body Selector, Hide Name (...), Car Fix
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -39,11 +39,14 @@ local IS_PC = not IS_MOBILE
 local ICON_SPLASH = "rbxassetid://96190503453096"
 
 -- ============================================================================
--- WEAPON DATABASE & CACHE
+-- WEAPON DATABASE (BLOCKSPIN COMPLETO)
 -- ============================================================================
 local WEAPON_DB = {
+    -- Tier 5
     ["M249"]              = {tier=5, label="M249",        col=Color3.fromRGB(255,50,50)},
     ["Anaconda"]          = {tier=5, label="Anaconda",    col=Color3.fromRGB(255,50,50)},
+    
+    -- Tier 4
     ["RPG"]               = {tier=4, label="RPG",         col=Color3.fromRGB(255,140,0)},
     ["M16"]               = {tier=4, label="M16",         col=Color3.fromRGB(255,140,0)},
     ["AK47"]              = {tier=4, label="AK47",        col=Color3.fromRGB(255,140,0)},
@@ -51,19 +54,25 @@ local WEAPON_DB = {
     ["Remington"]         = {tier=4, label="Remington",   col=Color3.fromRGB(255,140,0)},
     ["MP5"]               = {tier=4, label="MP5",         col=Color3.fromRGB(255,140,0)},
     ["Crossbow"]          = {tier=4, label="Crossbow",    col=Color3.fromRGB(255,140,0)},
-    ["Tactical Axe"]      = {tier=4, label="Tac.Axe",    col=Color3.fromRGB(255,140,0)},
+    ["Tactical Axe"]      = {tier=4, label="Tac.Axe",     col=Color3.fromRGB(255,140,0)},
     ["Tactical Shovel"]   = {tier=4, label="Tac.Shovel",  col=Color3.fromRGB(255,140,0)},
     ["Tactical Knife"]    = {tier=4, label="Tac.Knife",   col=Color3.fromRGB(255,140,0)},
     ["Firework Launcher"] = {tier=4, label="Firework",    col=Color3.fromRGB(255,140,0)},
+    ["Taser"]             = {tier=4, label="Taser",       col=Color3.fromRGB(255,140,0)},
+
+    -- Tier 3
     ["M24"]               = {tier=3, label="M24",         col=Color3.fromRGB(160,80,255)},
     ["Draco"]             = {tier=3, label="Draco",       col=Color3.fromRGB(160,80,255)},
     ["Skorpion"]          = {tier=3, label="Skorpion",    col=Color3.fromRGB(160,80,255)},
     ["Double Barrel"]     = {tier=3, label="Dbl.Barrel",  col=Color3.fromRGB(160,80,255)},
-    ["Barbed Baseball Bat"]={tier=3, label="Barbed Bat",  col=Color3.fromRGB(160,80,255)},
+    ["Barbed Baseball Bat"]={tier=3,label="Barbed Bat",   col=Color3.fromRGB(160,80,255)},
     ["Sledge Hammer"]     = {tier=3, label="Sledge",      col=Color3.fromRGB(160,80,255)},
     ["Combat Axe"]        = {tier=3, label="Cmbt.Axe",    col=Color3.fromRGB(160,80,255)},
     ["Machete"]           = {tier=3, label="Machete",     col=Color3.fromRGB(160,80,255)},
     ["Shovel"]            = {tier=3, label="Shovel",      col=Color3.fromRGB(160,80,255)},
+    ["Katana"]            = {tier=3, label="Katana",      col=Color3.fromRGB(160,80,255)},
+
+    -- Tier 2
     ["Brainrot Slapper"]  = {tier=2, label="Brainrot",    col=Color3.fromRGB(80,220,120)},
     ["Hunting Rifle"]     = {tier=2, label="Hunt.Rifle",  col=Color3.fromRGB(80,220,120)},
     ["Uzi"]               = {tier=2, label="Uzi",         col=Color3.fromRGB(80,220,120)},
@@ -77,9 +86,12 @@ local WEAPON_DB = {
     ["Frying Pan"]        = {tier=2, label="Pan",         col=Color3.fromRGB(80,220,120)},
     ["Butcher Knife"]     = {tier=2, label="Butcher",     col=Color3.fromRGB(80,220,120)},
     ["Switchblade"]       = {tier=2, label="Switchblade", col=Color3.fromRGB(80,220,120)},
+
+    -- Tier 1
     ["Baseball Bat"]      = {tier=1, label="Baseball Bat",col=Color3.fromRGB(180,180,180)},
     ["G3"]                = {tier=1, label="G3",          col=Color3.fromRGB(180,180,180)},
     ["C9"]                = {tier=1, label="C9",          col=Color3.fromRGB(180,180,180)},
+    ["Minigun"]           = {tier=1, label="Minigun",     col=Color3.fromRGB(180,180,180)},
 }
 
 local TIER_LABEL = {[5]="[Ω]",[4]="[L]",[3]="[E]",[2]="[R]",[1]="[C]",[0]="[?]"}
@@ -158,7 +170,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 17 -- Subido para forzar el nuevo MaxESP y TargetPart
+local CONFIG_VERSION = 19 -- Forzando el reset para los puntos suspensivos
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -236,7 +248,7 @@ local DEFAULTS = {
     FOV = 130,
     FOVRadius = 130,
     MaxDistance = 500,
-    TargetPart = "Head", -- Aquí guardamos la parte del cuerpo
+    TargetPart = "Head",
     TeamCheck = false,
     WallCheck = true,
     DrawFOV = true,
@@ -254,11 +266,11 @@ local DEFAULTS = {
     HitboxExpander = false,
     HitboxSize = 10,
     HitboxTransparency = 0.5,
-    MaxESP = 1500, -- ESP AUMENTADO
+    MaxESP = 1500,
     ESPRefresh = 0.1,
     ESPColor = {1, 1, 1},
     AutoPickup = true,
-    PickupRadius = 60, -- Un poco más de radio para chupar rápido
+    PickupRadius = 60,
     PickupDelay = 0.1,
     PickupMoney = true,
     PickupWeapons = true,
@@ -271,7 +283,7 @@ local DEFAULTS = {
     AutoSaveEnabled = true,
     AutoSaveInterval = 10,
     HideName = false,
-    HideNameText = "...",
+    HideNameText = "...", -- AQUÍ ESTÁN LOS PUNTOS
     HideLeaderboard = false,
 }
 
@@ -363,7 +375,7 @@ local isFiring = false
 local savedShotRotation = nil
 
 -- ============================================================================
--- HIDE NAME (ROBUSTO)
+-- HIDE NAME (CON PUNTOS SUSPENSIVOS)
 -- ============================================================================
 local originalDisplayName = nil
 local function applyHideName()
@@ -375,9 +387,15 @@ local function applyHideName()
     pcall(function()
         if originalDisplayName == nil then originalDisplayName = LocalPlayer.DisplayName end
         if CFG.HideName then 
-            LocalPlayer.DisplayName = "" 
+            LocalPlayer.DisplayName = CFG.HideNameText or "..."
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.DisplayName = CFG.HideNameText or "..."
+            end
         else 
             LocalPlayer.DisplayName = originalDisplayName 
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.DisplayName = originalDisplayName
+            end
         end
     end)
     pcall(function()
@@ -437,6 +455,11 @@ end
 refreshFilter()
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.4); refreshFilter()
+    
+    if CFG.HideName then
+        pcall(function() char:WaitForChild("Humanoid").DisplayName = CFG.HideNameText or "..." end)
+    end
+    
     local hum = char:WaitForChild("Humanoid", 3)
     if hum then hum:GetPropertyChangedSignal("SeatPart"):Connect(function() task.wait(0.1); refreshFilter() end) end
 end)
@@ -782,7 +805,7 @@ local function updateESP()
 end
 
 -- ============================================================================
--- PICKUP STEALTH (SIN TELETRANSPORTAR AL TORSO)
+-- PICKUP STEALTH
 -- ============================================================================
 local lastPickup = 0
 local function grabItem(m)
@@ -793,7 +816,6 @@ local function grabItem(m)
     local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
     if not part then return false end
     
-    -- Verificamos distancia para no chupar cosas del otro lado del mapa
     local d = (hrp.Position - part.Position).Magnitude
     if d > (CFG.PickupRadius * 2) then return false end
 
@@ -807,7 +829,6 @@ local function grabItem(m)
     
     if ok then
         pcall(function()
-            -- FIX DEL BUG DEL TORSO: Solo simulamos el toque, NO movemos el item.
             if firetouchinterest then
                 firetouchinterest(hrp, part, 0)
                 task.defer(function() firetouchinterest(hrp, part, 1) end)
@@ -818,20 +839,18 @@ local function grabItem(m)
     return false
 end
 
--- Evento instantáneo
 task.spawn(function()
     local folder = Workspace:WaitForChild("DroppedItems", 10)
     if folder then
         folder.ChildAdded:Connect(function(m)
             if getgenv().BSS_Aim_Loaded and CFG.AutoPickup then
-                task.wait(0.1) -- Mini delay para que el servidor registre la física
+                task.wait(0.1)
                 if grabItem(m) then sessionPickups += 1 end
             end
         end)
     end
 end)
 
--- Respaldo
 local function tryPickupLoop()
     if not CFG.AutoPickup then return end
     local now = tick()
@@ -896,7 +915,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.7", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.9", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -1021,7 +1040,6 @@ local function actionBtn(page, label, color, onClick)
     b.MouseButton1Click:Connect(onClick)
 end
 
--- Selector de partes del cuerpo (Para el Aimbot)
 local BPARTS = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"}
 local function partPicker(page)
     local row = new("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.bg2, BorderSizePixel = 0, LayoutOrder = nextOrder(), Parent = page })
@@ -1069,7 +1087,7 @@ toggle(espPage, "Cuerpo iluminado", "ChamsESP")
 toggle(espPage, "Nombre", "NameESP")
 toggle(espPage, "Vida (HP)", "HealthESP")
 toggle(espPage, "Arma equipada", "WeaponESP")
-slider(espPage, "Rango ESP", "MaxESP", 50, 5000, false) -- Rango extendido a 5000
+slider(espPage, "Rango ESP", "MaxESP", 50, 5000, false)
 
 local hitboxPage = pages["HITBOX"]
 section(hitboxPage, "EXPANDER")
@@ -1105,7 +1123,7 @@ section(hudPage, "HUD")
 toggle(hudPage, "Watermark", "HUDWatermark")
 toggle(hudPage, "Stats (FPS/Ping)", "HUDFPS")
 section(hudPage, "PRIVACIDAD")
-toggle(hudPage, "Ocultar mi nombre", "HideName")
+toggle(hudPage, "Ocultar mi nombre (...)", "HideName")
 toggle(hudPage, "Ocultar leaderboard", "HideLeaderboard")
 
 local safePage = pages["SAFE"]
@@ -1211,7 +1229,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v12.7"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v12.9"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
@@ -1297,7 +1315,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         local camPos = Camera.CFrame.Position
         local tPos = currentTarget.Position
         
-        -- ANTI-GIMBAL LOCK
         local lookDir = (tPos - camPos).Unit
         local upVec = Vector3.new(0, 1, 0)
         if math.abs(lookDir.Y) > 0.99 then
@@ -1339,5 +1356,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.7", "Stealth Pickup + Body Selector", 6)
-print("[BSS-Aim ULTRA v12.7] cargado - Stealth Pickup activo")
+notify("BSS-Aim ULTRA v12.9", "Hide Name (...) + Full Weapon DB", 6)
+print("[BSS-Aim ULTRA v12.9] cargado - Hide Name con puntos y Full DB")

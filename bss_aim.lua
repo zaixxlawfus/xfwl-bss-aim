@@ -1,12 +1,12 @@
 -- ============================================================================
--- BSS-Aim ULTRA v15.1 — COMPLETO | FakePart Camera Lock (FIXED)
+-- BSS-Aim ULTRA v15.2 — COMPLETO | Scriptable Camera Lock (SIN FakePart)
 -- Fix 1: _origCamSubject fresco post-respawn
--- Fix 2: restoreCamera sin snap/lookAt forzado
+-- Fix 2: CameraType Scriptable reemplaza FakePart — sin feedback loop
 -- Fix 3: alpha framerate-independent via exp decay
 -- ============================================================================
- 
+
 if not game:IsLoaded() then game.Loaded:Wait() end
- 
+
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -14,10 +14,10 @@ local Workspace        = game:GetService("Workspace")
 local TweenService     = game:GetService("TweenService")
 local HttpService      = game:GetService("HttpService")
 local StarterGui       = game:GetService("StarterGui")
- 
+
 local LP     = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
- 
+
 pcall(function()
     if gethui then
         for _, v in ipairs(gethui():GetChildren()) do
@@ -32,17 +32,17 @@ pcall(function()
     end
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 end)
- 
+
 getgenv().BSS_Aim_Loaded = true
 local _alive = true
- 
+
 local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 local IS_PC     = not IS_MOBILE
 local ICON      = "rbxassetid://96190503453096"
- 
+
 local _origCamType    = Camera.CameraType
 local _origCamSubject = Camera.CameraSubject
- 
+
 -- ============================================================================
 -- WEAPON DB
 -- ============================================================================
@@ -86,14 +86,14 @@ local WEAPON_DB = {
     ["G3"]                = {tier=1, label="G3",          col=Color3.fromRGB(180,180,180)},
     ["C9"]                = {tier=1, label="C9",          col=Color3.fromRGB(180,180,180)},
 }
- 
+
 local TIER_LABEL = {[5]="[Ω]",[4]="[L]",[3]="[E]",[2]="[R]",[1]="[C]",[0]="[?]"}
 local TIER_COL   = {
     [5]=Color3.fromRGB(255,50,50),[4]=Color3.fromRGB(255,140,0),
     [3]=Color3.fromRGB(160,80,255),[2]=Color3.fromRGB(80,220,120),
     [1]=Color3.fromRGB(180,180,180),[0]=Color3.fromRGB(120,120,120),
 }
- 
+
 local function resolveWeapon(name)
     if not name then return nil end
     local e = WEAPON_DB[name]; if e then return e end
@@ -102,10 +102,10 @@ local function resolveWeapon(name)
     for k,v in pairs(WEAPON_DB) do if lo:find(k:lower(),1,true) then return v end end
     return nil
 end
- 
+
 local _wepCache = {}
 local function invalidateWep(uid) _wepCache[uid] = nil end
- 
+
 local function getBestWeapon(plr)
     local uid  = plr.UserId
     local char = plr.Character
@@ -133,7 +133,7 @@ local function getBestWeapon(plr)
     _wepCache[uid] = {key=key, entry=best, tex=bestTex}
     return best, bestTex
 end
- 
+
 local function hookPlayer(plr)
     if plr == LP then return end
     local function onTool(c) if c:IsA("Tool") then invalidateWep(plr.UserId) end end
@@ -154,7 +154,7 @@ end
 for _,p in ipairs(Players:GetPlayers()) do hookPlayer(p) end
 Players.PlayerAdded:Connect(hookPlayer)
 Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
- 
+
 -- ============================================================================
 -- CONFIG
 -- ============================================================================
@@ -162,12 +162,12 @@ local CFG_FOLDER = "BSS_Ultra_v15"
 local CFG_FILE   = CFG_FOLDER.."/config.json"
 local HAS_IO     = (writefile and readfile and isfile and makefolder) and true or false
 local CFG_VER    = 25
- 
+
 local function mkFolder()
     if not HAS_IO then return end
     pcall(function() if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end end)
 end
- 
+
 local function saveCfg(path, cfg)
     if not HAS_IO then return end
     local clean = {}
@@ -178,7 +178,7 @@ local function saveCfg(path, cfg)
     end
     pcall(function() mkFolder(); writefile(path, HttpService:JSONEncode(clean)) end)
 end
- 
+
 local function loadCfg(path)
     if not HAS_IO then return nil end
     local ok,data = pcall(function()
@@ -202,7 +202,7 @@ local function loadCfg(path)
     end
     return data
 end
- 
+
 local DEFAULTS = {
     Ver=CFG_VER, Enabled=true,
     HoldKey=Enum.KeyCode.E, PanelKey=Enum.KeyCode.L,
@@ -220,7 +220,7 @@ local DEFAULTS = {
     AutoSave=true, AutoSaveInterval=10,
     LockSmooth=0.25,
 }
- 
+
 local CFG = {}
 for k,v in pairs(DEFAULTS) do CFG[k]=v end
 local saved = loadCfg(CFG_FILE)
@@ -229,7 +229,7 @@ if saved and saved.Ver == CFG_VER then
 end
 CFG.FOVRadius = CFG.FOV
 getgenv().BSS_Cfg = CFG
- 
+
 local dirty = false; local lastSave = tick()
 local function markDirty() dirty=true end
 task.spawn(function()
@@ -240,7 +240,7 @@ task.spawn(function()
         task.wait(1)
     end
 end)
- 
+
 -- ============================================================================
 -- COLORS
 -- ============================================================================
@@ -254,12 +254,12 @@ local C = {
     aimOn = Color3.fromRGB(255,75,85),  lock  = Color3.fromRGB(255,255,255),
     gold  = Color3.fromRGB(255,200,50),
 }
- 
+
 local function gui() return LP:WaitForChild("PlayerGui") end
 local function toast(title,txt,dur)
     pcall(function() StarterGui:SetCore("SendNotification",{Title=title,Text=txt,Duration=dur or 4}) end)
 end
- 
+
 -- ============================================================================
 -- STATE
 -- ============================================================================
@@ -276,39 +276,29 @@ local lastHPSnap        = {}
 local _inCar            = false
 local lastMouseMove     = 0
 local manualAimOverride = false
- 
--- ── FAKE PART ─────────────────────────────────────────────────────────────
-local _fakePart = Instance.new("Part")
-_fakePart.Name          = "BSS_FakeCamSubject"
-_fakePart.Size          = Vector3.new(0.1,0.1,0.1)
-_fakePart.Anchored      = true
-_fakePart.CanCollide    = false
-_fakePart.CanTouch      = false
-_fakePart.Massless      = true
-_fakePart.Transparency  = 1
-_fakePart.CastShadow    = false
-_fakePart.Parent        = Workspace
- 
+
+-- ── SCRIPTABLE LOCK — sin FakePart, sin feedback loop ────────────────────
 local _fakeLockActive = false
- 
+
 local function activateLock()
     if _fakeLockActive then return end
-    _fakeLockActive       = true
-    _origCamSubject       = Camera.CameraSubject
-    Camera.CameraSubject  = _fakePart
+    _fakeLockActive      = true
+    _origCamType         = Camera.CameraType
+    _origCamSubject      = Camera.CameraSubject
+    -- Scriptable: Roblox deja de tocar CFrame completamente
+    Camera.CameraType    = Enum.CameraType.Scriptable
 end
- 
--- ── FIX 2: restoreCamera sin snap ni lookAt forzado ───────────────────────
+
 local function restoreCamera()
     if not _fakeLockActive then return end
     _fakeLockActive = false
     pcall(function()
-        -- solo restaurar el subject; Roblox retoma control suave sin snap
+        -- devolver tipo original → Roblox retoma desde donde está, sin snap
+        Camera.CameraType    = _origCamType or Enum.CameraType.Custom
         Camera.CameraSubject = _origCamSubject or _lHum
-        -- NO tocamos Camera.CFrame — el snap venía de forzar un lookAt aquí
     end)
 end
- 
+
 -- ── LOCAL PLAYER REFS ─────────────────────────────────────────────────────
 local _lChar, _lHum, _lHRP = nil, nil, nil
 local function refreshLocal()
@@ -317,26 +307,29 @@ local function refreshLocal()
     _lHRP  = _lChar and _lChar:FindFirstChild("HumanoidRootPart")
 end
 refreshLocal()
- 
--- FIX 1: actualizar _origCamSubject en cada respawn para evitar ref stale
+
+-- FIX 1: actualizar refs en cada respawn para evitar stale
 LP.CharacterAdded:Connect(function(c)
     _lChar = c; task.wait(0.3)
     _lHum  = c:FindFirstChild("Humanoid")
     _lHRP  = c:FindFirstChild("HumanoidRootPart")
-    -- siempre refrescar el subject de referencia
     _origCamSubject = _lHum
+    _origCamType    = Enum.CameraType.Custom
     if not _fakeLockActive then
-        pcall(function() Camera.CameraSubject = _lHum end)
+        pcall(function()
+            Camera.CameraType    = Enum.CameraType.Custom
+            Camera.CameraSubject = _lHum
+        end)
     end
 end)
- 
+
 local _vpC = Vector2.new(0,0)
 local function refreshVP()
     local v=Camera.ViewportSize; _vpC=Vector2.new(v.X*.5,v.Y*.5)
 end
 refreshVP()
 Camera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshVP)
- 
+
 local _uiCache         = {}
 local _hitboxOriginal  = setmetatable({},{__mode="k"})
 local _hitboxApplied   = setmetatable({},{__mode="k"})
@@ -344,7 +337,7 @@ local _espCache        = setmetatable({},{__mode="k"})
 local _espHL           = {}
 local _espBB           = {}
 local _espRef          = setmetatable({},{__mode="k"})
- 
+
 -- ============================================================================
 -- HIDE NAME
 -- ============================================================================
@@ -357,7 +350,7 @@ local function applyHideName()
         LP.DisplayName = CFG.HideName and (CFG.HideNameTxt or "...") or _origName
     end)
 end
- 
+
 -- ============================================================================
 -- RAYCAST FILTER
 -- ============================================================================
@@ -371,7 +364,7 @@ local function updateFilter()
 end
 updateFilter()
 LP.CharacterAdded:Connect(function() task.wait(0.4); updateFilter() end)
- 
+
 -- ============================================================================
 -- AIM HELPERS
 -- ============================================================================
@@ -379,7 +372,7 @@ local function isAlive(plr)
     local c=plr.Character; if not c then return false end
     local h=c:FindFirstChildOfClass("Humanoid"); return h and h.Health>0
 end
- 
+
 local function isVisible(part,char)
     if not CFG.WallCheck then return true end
     local o=Camera.CFrame.Position
@@ -387,20 +380,20 @@ local function isVisible(part,char)
     if not hit then return true end
     return hit.Instance and hit.Instance:IsDescendantOf(char)
 end
- 
+
 local function getAimPart(plr)
     local c=plr.Character; if not c then return nil end
     return c:FindFirstChild(CFG.TargetPart)
         or c:FindFirstChild("Head")
         or c:FindFirstChild("HumanoidRootPart")
 end
- 
+
 local function screenDist(part)
     local sp,on=Camera:WorldToViewportPoint(part.Position)
     if not on then return math.huge end
     return (Vector2.new(sp.X,sp.Y)-_vpC).Magnitude
 end
- 
+
 local function findBestTarget()
     local best,bestPart,bestPlr = math.huge,nil,nil
     local camPos = Camera.CFrame.Position
@@ -422,14 +415,14 @@ local function findBestTarget()
     end
     return bestPlr,bestPart
 end
- 
+
 local function targetGone()
     if not curTarget or not curTarget.Parent then return true end
     local hum=curTarget.Parent:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health<=0 then return true end
     return (Camera.CFrame.Position-curTarget.Position).Magnitude>CFG.MaxDist*1.1
 end
- 
+
 -- ============================================================================
 -- INPUT
 -- ============================================================================
@@ -439,7 +432,7 @@ UserInputService.InputChanged:Connect(function(input)
         if input.Delta.Magnitude>0.5 then lastMouseMove=tick() end
     end
 end)
- 
+
 UserInputService.InputBegan:Connect(function(i,gp)
     if gp then return end
     if i.KeyCode==CFG.HoldKey then aimOn=true end
@@ -456,7 +449,7 @@ UserInputService.InputBegan:Connect(function(i,gp)
         toast("PANIC","Todo desactivado",3)
     end
 end)
- 
+
 UserInputService.InputEnded:Connect(function(i,gp)
     if gp then return end
     if i.KeyCode==CFG.HoldKey then
@@ -469,14 +462,14 @@ UserInputService.InputEnded:Connect(function(i,gp)
         isFiring=false; savedRot=nil
     end
 end)
- 
+
 -- ============================================================================
 -- SILENT AIM
 -- ============================================================================
 local _mt=nil; local _oldNC=nil; local _silentOn=false
 pcall(function() if getrawmetatable then _mt=getrawmetatable(game) end end)
 if _mt then _oldNC=rawget(_mt,"__namecall") end
- 
+
 local function enableSilent()
     if _silentOn or not _mt or not newcclosure or not setreadonly then return end
     _silentOn=true
@@ -503,7 +496,7 @@ local function enableSilent()
         setreadonly(_mt,true)
     end)
 end
- 
+
 local function disableSilent()
     if not _silentOn or not _mt or not _oldNC then return end
     _silentOn=false
@@ -511,7 +504,7 @@ local function disableSilent()
         setreadonly(_mt,false); _mt.__namecall=_oldNC; setreadonly(_mt,true)
     end)
 end
- 
+
 -- ============================================================================
 -- HITBOX
 -- ============================================================================
@@ -548,7 +541,7 @@ local function applyHB(char)
         if cache.headT~=t           then head.Transparency=t;  cache.headT=t          end
     end
 end
- 
+
 local function restoreHB(char)
     local o=_hitboxOriginal[char]; if not o then return end
     local hrp=char and char:FindFirstChild("HumanoidRootPart")
@@ -569,7 +562,7 @@ local function restoreHB(char)
     end
     _hitboxOriginal[char]=nil; _hitboxApplied[char]=nil
 end
- 
+
 local function restoreAllHB()
     for c in pairs(_hitboxOriginal) do restoreHB(c) end
 end
@@ -583,14 +576,14 @@ Players.PlayerAdded:Connect(function(p)
         task.wait(0.3); if CFG.HitboxOn then applyHB(c) end
     end)
 end)
- 
+
 -- ============================================================================
 -- FOV CIRCLE
 -- ============================================================================
 local fovSG=Instance.new("ScreenGui")
 fovSG.Name="BSS_FOV"; fovSG.ResetOnSpawn=false
 fovSG.IgnoreGuiInset=true; fovSG.DisplayOrder=9999; fovSG.Parent=gui()
- 
+
 local fovRing=Instance.new("Frame")
 fovRing.BackgroundTransparency=1; fovRing.AnchorPoint=Vector2.new(.5,.5)
 fovRing.Position=UDim2.fromScale(.5,.5); fovRing.Visible=false
@@ -598,7 +591,7 @@ fovRing.ZIndex=100; fovRing.Parent=fovSG
 Instance.new("UICorner",fovRing).CornerRadius=UDim.new(1,0)
 local fovStk=Instance.new("UIStroke")
 fovStk.Color=C.acc; fovStk.Thickness=1.5; fovStk.Parent=fovRing
- 
+
 -- ============================================================================
 -- MOBILE AIM
 -- ============================================================================
@@ -630,7 +623,7 @@ if IS_MOBILE then
         end
     end)
 end
- 
+
 -- ============================================================================
 -- ESP
 -- ============================================================================
@@ -639,14 +632,14 @@ local function clearEspPlayer(plr)
     if _espBB[plr] then pcall(function() _espBB[plr]:Destroy() end); _espBB[plr]=nil end
     _espRef[plr]=nil; _espCache[plr]=nil
 end
- 
+
 local function makeHL(char)
     local hl=Instance.new("Highlight")
     hl.Name="BSS_HL"; hl.FillTransparency=0.45; hl.OutlineTransparency=0
     hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
     hl.Adornee=char; hl.Parent=char; return hl
 end
- 
+
 local function makeBB(head)
     local bb=Instance.new("BillboardGui")
     bb.Name="BSS_BB"; bb.AlwaysOnTop=true; bb.Adornee=head; bb.Parent=head
@@ -668,7 +661,7 @@ local function makeBB(head)
     wepImg.ScaleType=Enum.ScaleType.Fit; wepImg.Image=""; wepImg.Parent=bb
     return bb,{name=nameLbl,hp=hpLbl,wep=wepLbl,img=wepImg}
 end
- 
+
 local _espSubframe=0
 local function updateESP()
     _espSubframe=(_espSubframe+1)%2
@@ -745,7 +738,7 @@ local function updateESP()
     for plr in pairs(_espHL) do if not plr.Parent then clearEspPlayer(plr) end end
     for plr in pairs(_espBB) do if not plr.Parent then clearEspPlayer(plr) end end
 end
- 
+
 -- ============================================================================
 -- PICKUP
 -- ============================================================================
@@ -784,7 +777,7 @@ local function tryPickup()
     end
     if picked then _lastPick=now end
 end
- 
+
 -- ============================================================================
 -- TRACK KILLS
 -- ============================================================================
@@ -799,7 +792,7 @@ local function trackKills()
         end
     end
 end
- 
+
 -- ============================================================================
 -- UI HELPERS
 -- ============================================================================
@@ -818,19 +811,19 @@ local function pad(p,t,b,l,r)
     u.PaddingTop=UDim.new(0,t or 0); u.PaddingBottom=UDim.new(0,b or 0)
     u.PaddingLeft=UDim.new(0,l or 0); u.PaddingRight=UDim.new(0,r or 0)
 end
- 
+
 -- ============================================================================
 -- PANEL PRINCIPAL
 -- ============================================================================
 local sg=mk("ScreenGui",{Name="BSS_UI",ResetOnSpawn=false,IgnoreGuiInset=true,
     DisplayOrder=9999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=gui()})
 local PW,PH=430,560
- 
+
 local panel=mk("Frame",{Size=UDim2.fromOffset(PW,PH),
     Position=UDim2.new(.5,-PW/2,.5,-PH/2),
     BackgroundColor3=C.bg,BorderSizePixel=0,Parent=sg})
 rnd(panel,14); stk(panel,C.brd,1.2)
- 
+
 local topBar=mk("Frame",{Size=UDim2.new(1,0,0,3),
     BackgroundColor3=C.acc,BorderSizePixel=0,Parent=panel})
 rnd(topBar,14)
@@ -838,10 +831,10 @@ mk("UIGradient",{Color=ColorSequence.new({
     ColorSequenceKeypoint.new(0,Color3.fromRGB(120,100,255)),
     ColorSequenceKeypoint.new(.5,Color3.fromRGB(255,255,255)),
     ColorSequenceKeypoint.new(1,Color3.fromRGB(80,200,255))}),Parent=topBar})
- 
+
 local hdr=mk("Frame",{Size=UDim2.new(1,0,0,46),Position=UDim2.new(0,0,0,3),
     BackgroundColor3=Color3.fromRGB(8,8,10),BorderSizePixel=0,Parent=panel})
- 
+
 local logoF=mk("Frame",{Size=UDim2.fromOffset(32,32),
     Position=UDim2.new(0,12,0.5,-16),
     BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,Parent=hdr})
@@ -849,7 +842,7 @@ rnd(logoF,10); stk(logoF,Color3.fromRGB(255,255,255),1.5)
 mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),
     Size=UDim2.fromScale(.72,.72),BackgroundTransparency=1,Image=ICON,
     ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=logoF})
- 
+
 mk("TextLabel",{Size=UDim2.new(0,200,0,18),Position=UDim2.new(0,52,0,4),
     BackgroundTransparency=1,Text="BSS-AIM ULTRA",
     TextColor3=Color3.fromRGB(255,255,255),TextSize=15,Font=Enum.Font.GothamBold,
@@ -859,7 +852,7 @@ mk("TextLabel",{Size=UDim2.new(0,240,0,13),Position=UDim2.new(0,52,0,22),
     Text="PRO EDITION · v15.1 · "..(IS_PC and "PC" or "Mobile"),
     TextColor3=C.muted,TextSize=10,Font=Enum.Font.Gotham,
     TextXAlignment=Enum.TextXAlignment.Left,Parent=hdr})
- 
+
 local function hdrBtn(txt,xOff)
     local b=mk("TextButton",{Size=UDim2.fromOffset(28,28),
         Position=UDim2.new(1,xOff,0.5,-14),BackgroundColor3=C.bg3,
@@ -870,19 +863,19 @@ local function hdrBtn(txt,xOff)
 end
 local minBtn  =hdrBtn("−",-74)
 local closeBtn=hdrBtn("×",-40)
- 
+
 local TABS={"AIM","ESP","HITBOX","PICKUP","HUD","SAFE"}
 local tabFrame=mk("Frame",{Size=UDim2.new(1,-20,0,32),Position=UDim2.new(0,10,0,57),
     BackgroundColor3=C.bg2,BorderSizePixel=0,Parent=panel})
 rnd(tabFrame,10); stk(tabFrame,C.brd,1)
 mk("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,
     SortOrder=Enum.SortOrder.LayoutOrder,Parent=tabFrame})
- 
+
 local pages={}; local tabBtns={}
 local tabLine=mk("Frame",{Size=UDim2.new(0,0,0,2),Position=UDim2.new(0,0,1,-2),
     BackgroundColor3=C.acc,BorderSizePixel=0,Parent=tabFrame})
 rnd(tabLine,2)
- 
+
 local function selectTab(name)
     for k,p in pairs(pages) do p.Visible=(k==name) end
     for k,b in pairs(tabBtns) do
@@ -898,10 +891,10 @@ local function selectTab(name)
         }):Play()
     end
 end
- 
+
 local content=mk("Frame",{Size=UDim2.new(1,-20,1,-148),
     Position=UDim2.new(0,10,0,97),BackgroundTransparency=1,Parent=panel})
- 
+
 for i,tname in ipairs(TABS) do
     local b=mk("TextButton",{Size=UDim2.new(1/#TABS,0,1,0),BackgroundTransparency=1,
         Text=tname,TextColor3=C.muted,TextSize=10,Font=Enum.Font.GothamBold,
@@ -914,7 +907,7 @@ for i,tname in ipairs(TABS) do
     mk("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder,Parent=pg})
     pad(pg,2,4,0,4); pages[tname]=pg
 end
- 
+
 local footer=mk("Frame",{Size=UDim2.new(1,-20,0,26),
     Position=UDim2.new(0,10,1,-34),BackgroundColor3=C.bg2,BorderSizePixel=0,Parent=panel})
 rnd(footer,8); stk(footer,C.brd)
@@ -923,12 +916,12 @@ mk("TextLabel",{Size=UDim2.new(1,-16,1,0),Position=UDim2.new(0,10,0,0),
     TextXAlignment=Enum.TextXAlignment.Left,
     Text=IS_PC and "[L] panel  ·  [E] hold aim  ·  [Delete] panic" or "AIM = hold  ·  [M] cerrar",
     Parent=footer})
- 
+
 -- ============================================================================
 -- COMPONENTS
 -- ============================================================================
 local _ord=0; local function nxt() _ord+=1; return _ord end
- 
+
 local function sec(page,txt)
     local w=mk("Frame",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1,
         LayoutOrder=nxt(),Parent=page})
@@ -939,7 +932,7 @@ local function sec(page,txt)
         Size=UDim2.new(1,-10,1,0),Font=Enum.Font.GothamBold,Text=txt,
         TextColor3=C.fg,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=w})
 end
- 
+
 local function tog(page,lbl,key,cb)
     local row=mk("Frame",{Size=UDim2.new(1,0,0,36),BackgroundColor3=C.bg2,
         BorderSizePixel=0,LayoutOrder=nxt(),Parent=page})
@@ -967,7 +960,7 @@ local function tog(page,lbl,key,cb)
     end)
     rr(false)
 end
- 
+
 local function sld(page,lbl,key,mn,mx,isFloat,cb)
     local row=mk("Frame",{Size=UDim2.new(1,0,0,48),BackgroundColor3=C.bg2,
         BorderSizePixel=0,LayoutOrder=nxt(),Parent=page})
@@ -1013,7 +1006,7 @@ local function sld(page,lbl,key,mn,mx,isFloat,cb)
     end)
     rr()
 end
- 
+
 local function kbRow(page,lbl,key)
     local row=mk("Frame",{Size=UDim2.new(1,0,0,36),BackgroundColor3=C.bg2,
         BorderSizePixel=0,LayoutOrder=nxt(),Parent=page})
@@ -1040,7 +1033,7 @@ local function kbRow(page,lbl,key)
     end)
     rr()
 end
- 
+
 local function actBtn(page,lbl,col,fn)
     local b=mk("TextButton",{Size=UDim2.new(1,0,0,34),BackgroundColor3=col or C.bg3,
         BorderSizePixel=0,Font=Enum.Font.GothamBold,Text=lbl,
@@ -1056,7 +1049,7 @@ local function actBtn(page,lbl,col,fn)
     end)
     b.MouseButton1Click:Connect(fn)
 end
- 
+
 local BPARTS={"Head","HumanoidRootPart","UpperTorso","LowerTorso",
               "LeftUpperArm","RightUpperArm","LeftUpperLeg","RightUpperLeg"}
 local function partPicker(page)
@@ -1089,7 +1082,7 @@ local function partPicker(page)
     pv.MouseButton1Click:Connect(function() si(ci()-1) end)
     nx.MouseButton1Click:Connect(function() si(ci()+1) end)
 end
- 
+
 -- ============================================================================
 -- PAGES
 -- ============================================================================
@@ -1108,7 +1101,7 @@ tog(ap,"Team check","TeamCheck")
 if IS_PC then tog(ap,"Silent aim","SilentAim") end
 sec(ap,"OBJETIVO")
 partPicker(ap)
- 
+
 local ep=pages["ESP"]
 sec(ep,"JUGADORES")
 tog(ep,"Activar ESP","PlayerESP")
@@ -1117,7 +1110,7 @@ tog(ep,"Nombre","NameESP")
 tog(ep,"Vida","HealthESP")
 tog(ep,"Arma + tier","WeaponESP")
 sld(ep,"Rango ESP","MaxESP",50,1200,false)
- 
+
 local hp=pages["HITBOX"]
 sec(hp,"HITBOX EXPANDER")
 tog(hp,"Activar hitbox","HitboxOn",function(v)
@@ -1129,7 +1122,7 @@ end)
 sld(hp,"Transparencia","HitboxAlpha",0,1,true,function()
     if CFG.HitboxOn then reapplyAllHB() end
 end)
- 
+
 local pp=pages["PICKUP"]
 sec(pp,"AUTO PICKUP")
 tog(pp,"Activar pickup","PickupOn")
@@ -1140,7 +1133,7 @@ tog(pp,"Money / Cash","PickupMoney")
 tog(pp,"Armas","PickupWeapons")
 tog(pp,"Comida","PickupFood")
 tog(pp,"Herramientas","PickupTools")
- 
+
 local hup=pages["HUD"]
 sec(hup,"HUD")
 tog(hup,"Watermark","WatermarkOn")
@@ -1148,7 +1141,7 @@ tog(hup,"Stats (kills/fps)","StatsOn")
 sec(hup,"PRIVACIDAD")
 tog(hup,"Ocultar mi nombre","HideName")
 tog(hup,"Ocultar leaderboard","HideBoard")
- 
+
 local sp=pages["SAFE"]
 sec(sp,"KEYBINDS")
 kbRow(sp,"Panel (abrir)","PanelKey")
@@ -1168,14 +1161,13 @@ actBtn(sp,"Reiniciar script",Color3.fromRGB(80,20,20),function()
     if _origName then pcall(function() LP.DisplayName=_origName end) end
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
     _alive=false
-    pcall(function() _fakePart:Destroy() end)
     fovSG:Destroy(); sg:Destroy()
     for plr in pairs(_espHL) do clearEspPlayer(plr) end
     getgenv().BSS_Aim_Loaded=false
 end)
- 
+
 selectTab("AIM")
- 
+
 -- ============================================================================
 -- DRAG + MINIMIZE
 -- ============================================================================
@@ -1200,7 +1192,7 @@ local function mkDrag(frame,handle)
     end)
 end
 mkDrag(panel,hdr)
- 
+
 local mini=mk("TextButton",{Size=UDim2.fromOffset(54,54),
     Position=UDim2.new(.5,-27,0,18),
     BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,
@@ -1209,7 +1201,7 @@ rnd(mini,27); stk(mini,Color3.fromRGB(255,255,255),1.5)
 mk("ImageLabel",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),
     Size=UDim2.fromScale(.7,.7),BackgroundTransparency=1,Image=ICON,
     ImageColor3=Color3.fromRGB(8,8,10),ScaleType=Enum.ScaleType.Fit,Parent=mini})
- 
+
 local function openPanel()
     if panel.Visible then return end
     mini.Visible=false; panel.Visible=true; panel.Size=UDim2.fromOffset(1,1)
@@ -1229,7 +1221,7 @@ local function closePanel()
             Enum.EasingDirection.Out),{Size=UDim2.fromOffset(54,54)}):Play()
     end)
 end
- 
+
 mini.MouseButton1Click:Connect(openPanel)
 minBtn.MouseButton1Click:Connect(closePanel)
 closeBtn.MouseButton1Click:Connect(function()
@@ -1237,7 +1229,6 @@ closeBtn.MouseButton1Click:Connect(function()
     if _origName then pcall(function() LP.DisplayName=_origName end) end
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
     _alive=false
-    pcall(function() _fakePart:Destroy() end)
     fovSG:Destroy(); sg:Destroy()
     for plr in pairs(_espHL) do clearEspPlayer(plr) end
     getgenv().BSS_Aim_Loaded=false
@@ -1247,13 +1238,13 @@ UserInputService.InputBegan:Connect(function(i,gp)
     if i.KeyCode==CFG.PanelKey then openPanel() end
     if i.KeyCode==CFG.CloseKey  then closePanel() end
 end)
- 
+
 -- ============================================================================
 -- HUD
 -- ============================================================================
 local hudSG=mk("ScreenGui",{Name="BSS_HUD",ResetOnSpawn=false,
     IgnoreGuiInset=true,DisplayOrder=9999,Parent=gui()})
- 
+
 local wm=mk("Frame",{Size=UDim2.fromOffset(230,26),Position=UDim2.new(0,18,0,18),
     BackgroundColor3=C.bg,BackgroundTransparency=0.2,BorderSizePixel=0,
     ZIndex=150,Parent=hudSG})
@@ -1262,7 +1253,7 @@ mk("TextLabel",{Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),
     BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=11,
     TextColor3=C.acc,TextXAlignment=Enum.TextXAlignment.Left,
     Text="BSS-Aim ULTRA v15.1",Parent=wm})
- 
+
 local stats=mk("Frame",{Size=UDim2.fromOffset(175,82),
     Position=UDim2.new(1,-193,0,52),BackgroundColor3=C.bg,
     BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=150,Parent=hudSG})
@@ -1271,10 +1262,10 @@ local statsLbl=mk("TextLabel",{Size=UDim2.new(1,-12,1,-10),
     Position=UDim2.new(0,8,0,5),BackgroundTransparency=1,Font=Enum.Font.Code,
     TextSize=11,TextColor3=C.fg,TextXAlignment=Enum.TextXAlignment.Left,
     TextYAlignment=Enum.TextYAlignment.Top,TextWrapped=true,Text="",Parent=stats})
- 
+
 local fpsCount=0; local fpsTimer=tick(); local curFPS=60
 local _stK=-1; local _stI=-1; local _stM=-1; local _stF=-1
- 
+
 -- ============================================================================
 -- LOOPS
 -- ============================================================================
@@ -1294,7 +1285,7 @@ task.spawn(function()
         task.wait(1)
     end
 end)
- 
+
 -- ============================================================================
 -- TARGET SCAN — Heartbeat
 -- ============================================================================
@@ -1321,48 +1312,48 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
- 
+
 -- ============================================================================
 -- MAIN LOOP — CAMERA LOCK (FIXED)
 -- ============================================================================
 pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
- 
+
 RunService:BindToRenderStep("BSS_Aim_Ultra_Loop",
     Enum.RenderPriority.Camera.Value + 1, function(dt)
- 
+
     if not _alive then return end
- 
+
     fpsCount+=1
     if tick()-fpsTimer>=1 then curFPS=fpsCount; fpsCount=0; fpsTimer=tick() end
- 
+
     _inCar = _lHum and _lHum.SeatPart ~= nil
- 
+
     local wantSilent = IS_PC and CFG.SilentAim and CFG.Enabled
                        and aimOn and curTarget ~= nil and not manualAimOverride
     if wantSilent and not _silentOn then enableSilent()
     elseif not wantSilent and _silentOn then disableSilent() end
- 
+
     if CFG.DrawFOV and CFG.Enabled and aimOn then
         fovRing.Size = UDim2.fromOffset(CFG.FOVRadius*2, CFG.FOVRadius*2)
         fovStk.Color = curTarget and C.lock or C.acc
         fovRing.Visible = true
     else fovRing.Visible = false end
- 
+
     local lockActive = CFG.Enabled and aimOn and curTarget
                        and CFG.CameraLock and not manualAimOverride
- 
+
     if lockActive then
         local camPos = Camera.CFrame.Position
         local ok, tPos = pcall(function() return curTarget.Position end)
- 
+
         if ok and tPos then
             activateLock()
-            _fakePart.CFrame = CFrame.new(camPos)
- 
+            -- sin fakePart — CameraType.Scriptable ya bloquea a Roblox
+
             local lookDir = (tPos - camPos)
             if lookDir.Magnitude < 0.01 then return end
             lookDir = lookDir.Unit
- 
+
             local upVec
             if math.abs(lookDir.Y) > 0.98 then
                 local right = Camera.CFrame.RightVector
@@ -1372,16 +1363,16 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop",
             else
                 upVec = Vector3.new(0,1,0)
             end
- 
+
             local targetCF = CFrame.lookAt(camPos, tPos, upVec)
- 
+
             -- FIX 3: exp decay framerate-independent
             -- LockSmooth 0.05=suave, 1.0=snap
             -- decay 0.05*25=1.25/s → 1.0*25=25/s
             local decay = CFG.LockSmooth * 25
             local alpha = 1 - math.exp(-decay * dt)
             alpha = math.clamp(alpha, 0.02, 1)
- 
+
             Camera.CFrame = Camera.CFrame:Lerp(targetCF, alpha)
         else
             curTarget = nil; curPlr = nil
@@ -1397,7 +1388,7 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop",
             Camera.CFrame = CFrame.new(Camera.CFrame.Position) * savedRot
         end
     end
- 
+
     -- HUD
     if _uiCache.wmVisible ~= CFG.WatermarkOn then
         wm.Visible = CFG.WatermarkOn; _uiCache.wmVisible = CFG.WatermarkOn
@@ -1416,6 +1407,6 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop",
         end
     end
 end)
- 
-toast("BSS-Aim ULTRA v15.1","Camera fix aplicado — sin infinito",5)
-print("[BSS-Aim ULTRA v15.1] FIXED | expDecay lock + restoreCamera sin snap + origCamSubject fresco")
+
+toast("BSS-Aim ULTRA v15.2","Scriptable lock — FakePart eliminado, sin infinito",5)
+print("[BSS-Aim ULTRA v15.2] FIXED | CameraType.Scriptable + expDecay + restoreCamera limpio")

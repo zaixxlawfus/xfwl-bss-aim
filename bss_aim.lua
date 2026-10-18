@@ -1503,4 +1503,4 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
 end)
 
 notify("BSS-Aim ULTRA v12.4", "Switch fluido + ESP fix", 6)
-print("[BSS-Aim ULTRA v12.4] cargado — mouse override activo") 
+print("[BSS-Aim ULTRA v12.4] cargado — mouse override activo")

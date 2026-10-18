@@ -1,6 +1,6 @@
 -- ============================================================================
--- BSS-Aim ULTRA v12.4
--- Mini botón fijo arriba, Car Aim arreglado, No Recoil, ESP Armas + Tier
+-- BSS-Aim ULTRA v12.6
+-- Car Aim Fix (Custom + UpVector), Hitbox Heavy, Pickup Instantáneo, ESP Armas
 -- ============================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -39,7 +39,7 @@ local IS_PC = not IS_MOBILE
 local ICON_SPLASH = "rbxassetid://96190503453096"
 
 -- ============================================================================
--- WEAPON DATABASE & CACHE (PARA EL ESP)
+-- WEAPON DATABASE & CACHE
 -- ============================================================================
 local WEAPON_DB = {
     ["M249"]              = {tier=5, label="M249",        col=Color3.fromRGB(255,50,50)},
@@ -158,7 +158,7 @@ Players.PlayerRemoving:Connect(function(p) _wepCache[p.UserId]=nil end)
 local CONFIG_FOLDER = "BSS_Aim_Ultra"
 local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
 local HAVE_FILE_IO = (writefile and readfile and isfile and makefolder) and true or false
-local CONFIG_VERSION = 14
+local CONFIG_VERSION = 16
 
 local function ensureFolder()
     if not HAVE_FILE_IO then return end
@@ -552,23 +552,78 @@ if IS_PC and CFG.SilentAim then
 end
 
 -- ============================================================================
--- HITBOX EXPANDER
+-- HITBOX HEAVY (SISTEMA SEGURO + CACHÉ)
 -- ============================================================================
+local _hitboxOriginal = setmetatable({}, {__mode = "k"})
+local _hitboxApplied = setmetatable({}, {__mode = "k"})
+
 local function applyHitbox(char)
-    if not CFG.HitboxExpander then return end
+    if not CFG.HitboxExpander or not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local head = char:FindFirstChild("Head")
+    if not hrp and not head then return end
+
+    if not _hitboxOriginal[char] then
+        _hitboxOriginal[char] = {
+            hrpSize = hrp and hrp.Size, hrpT = hrp and hrp.Transparency,
+            hrpCollide = hrp and hrp.CanCollide, hrpMass = hrp and hrp.Massless, hrpTouch = hrp and hrp.CanTouch,
+            headSize = head and head.Size, headT = head and head.Transparency,
+            headCollide = head and head.CanCollide, headMass = head and head.Massless, headTouch = head and head.CanTouch
+        }
+    end
+
+    local size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize)
+    local trans = CFG.HitboxTransparency
+    local cache = _hitboxApplied[char]
+    if not cache then cache = {}; _hitboxApplied[char] = cache end
+
     if hrp then
-        hrp.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize)
-        hrp.Transparency = CFG.HitboxTransparency
-        hrp.CanCollide = false
-        hrp.Massless = true
+        if cache.hrpCollide ~= false then hrp.CanCollide = false; cache.hrpCollide = false end
+        if cache.hrpMass ~= true then hrp.Massless = true; cache.hrpMass = true end
+        if cache.hrpTouch ~= false then hrp.CanTouch = false; cache.hrpTouch = false end
+        if cache.hrpSize ~= size then hrp.Size = size; cache.hrpSize = size end
+        if cache.hrpT ~= trans then hrp.Transparency = trans; cache.hrpT = trans end
     end
     if head then
-        head.Size = Vector3.new(CFG.HitboxSize, CFG.HitboxSize, CFG.HitboxSize)
-        head.Transparency = CFG.HitboxTransparency
-        head.CanCollide = false
-        head.Massless = true
+        if cache.headCollide ~= false then head.CanCollide = false; cache.headCollide = false end
+        if cache.headMass ~= true then head.Massless = true; cache.headMass = true end
+        if cache.headTouch ~= false then head.CanTouch = false; cache.headTouch = false end
+        if cache.headSize ~= size then head.Size = size; cache.headSize = size end
+        if cache.headT ~= trans then head.Transparency = trans; cache.headT = trans end
+    end
+end
+
+local function restoreHitbox(char)
+    local orig = _hitboxOriginal[char]
+    if not orig then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local head = char:FindFirstChild("Head")
+    
+    if hrp then
+        hrp.Size = orig.hrpSize
+        hrp.Transparency = orig.hrpT
+        hrp.CanCollide = orig.hrpCollide
+        hrp.Massless = orig.hrpMass
+        hrp.CanTouch = orig.hrpTouch
+    end
+    if head then
+        head.Size = orig.headSize
+        head.Transparency = orig.headT
+        head.CanCollide = orig.headCollide
+        head.Massless = orig.headMass
+        head.CanTouch = orig.headTouch
+    end
+    _hitboxOriginal[char] = nil
+    _hitboxApplied[char] = nil
+end
+
+local function restoreAllHitboxes()
+    for char, _ in pairs(_hitboxOriginal) do restoreHitbox(char) end
+end
+
+local function reapplyAllHitboxes()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then applyHitbox(p.Character) end
     end
 end
 
@@ -647,7 +702,6 @@ local function updateESP()
         local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
         if dist > CFG.MaxESP then clearESP(plr); continue end
 
-        -- 1. Highlight (Chams)
         if CFG.PlayerESP and CFG.ChamsESP then
             if not pESP[plr] or not pESP[plr].Parent then
                 local hl = Instance.new("Highlight")
@@ -672,7 +726,6 @@ local function updateESP()
             if pESP[plr] then pESP[plr]:Destroy(); pESP[plr] = nil end
         end
 
-        -- 2. Textos (Nombre, HP, Arma)
         if CFG.PlayerESP and (CFG.NameESP or CFG.HealthESP or CFG.WeaponESP) then
             local refs = _espRef[plr]
             if not tESP[plr] or not tESP[plr].Parent or not refs then
@@ -707,17 +760,13 @@ local function updateESP()
                 if we then
                     refs.wep.Visible = true
                     refs.wep.Text = (TIER_LABEL[we.tier] or "[?]").." "..we.label
-                    refs.wep.TextColor3 = TIER_COL[we.tier] or C.acc
+                    refs.wep.TextColor3 = TIER_COL[we.tier] or C.accent
                     
                     if refs.img then
                         local hasImg = (tex and tex ~= "")
                         refs.img.Image = hasImg and tex or ""
                         refs.img.Visible = hasImg
-                        
-                        -- FIX: Color blanco puro para que la textura se vea bien
                         refs.img.ImageColor3 = Color3.new(1,1,1)
-                        
-                        -- Si hay imagen, movemos el texto a la derecha
                         refs.wep.Position = hasImg and UDim2.new(0, 20, 0, 30) or UDim2.new(0, 0, 0, 30)
                     end
                 else
@@ -735,13 +784,56 @@ local function updateESP()
 end
 
 -- ============================================================================
--- PICKUP
+-- PICKUP INSTANTÁNEO + LOOP DE RESPALDO
 -- ============================================================================
 local lastPickup = 0
-local function tryPickup()
+local function grabItem(m)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    
+    local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
+    if not part then return false end
+    
+    local n = m.Name:lower()
+    local ok = false
+    if n:find("money") or n:find("cash") then ok = CFG.PickupMoney
+    elseif n:find("taser") or n:find("gun") or n:find("ak") or n:find("pistol") or n:find("rifle") then ok = CFG.PickupWeapons
+    elseif n:find("food") or n:find("burger") or n:find("pizza") then ok = CFG.PickupFood
+    elseif n:find("tool") or n:find("wrench") then ok = CFG.PickupTools
+    else ok = true end
+    
+    if ok then
+        pcall(function()
+            if m:IsA("Model") then m:PivotTo(CFrame.new(hrp.Position))
+            elseif part:IsA("BasePart") then part.CFrame = CFrame.new(hrp.Position) end
+            
+            if firetouchinterest then
+                firetouchinterest(hrp, part, 0)
+                task.defer(function() firetouchinterest(hrp, part, 1) end)
+            end
+        end)
+        return true
+    end
+    return false
+end
+
+task.spawn(function()
+    local folder = Workspace:WaitForChild("DroppedItems", 10)
+    if folder then
+        folder.ChildAdded:Connect(function(m)
+            if getgenv().BSS_Aim_Loaded and CFG.AutoPickup then
+                task.wait(0.05)
+                if grabItem(m) then sessionPickups += 1 end
+            end
+        end)
+    end
+end)
+
+local function tryPickupLoop()
     if not CFG.AutoPickup then return end
     local now = tick()
-    if now - lastPickup < CFG.PickupDelay then return end
+    if now - lastPickup < (CFG.PickupDelay or 0.1) then return end
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
@@ -753,24 +845,9 @@ local function tryPickup()
     for _, m in ipairs(folder:GetChildren()) do
         local part = m:FindFirstChild("PickUpZone") or m:FindFirstChild("CashPart") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart", true)
         if not part then continue end
-        
         local d = (hrp.Position - part.Position).Magnitude
         if d < CFG.PickupRadius then
-            local n = m.Name:lower()
-            local ok = false
-            if n:find("money") or n:find("cash") then ok = CFG.PickupMoney
-            elseif n:find("taser") or n:find("gun") or n:find("ak") or n:find("pistol") then ok = CFG.PickupWeapons
-            elseif n:find("food") or n:find("burger") or n:find("pizza") then ok = CFG.PickupFood
-            elseif n:find("tool") or n:find("wrench") then ok = CFG.PickupTools
-            else ok = true end
-            
-            if ok then
-                pcall(function()
-                    if m:IsA("Model") then m:PivotTo(CFrame.new(hrp.Position))
-                    elseif part:IsA("BasePart") then part.CFrame = CFrame.new(hrp.Position) end
-                end)
-                picked = true; sessionPickups += 1
-            end
+            if grabItem(m) then picked = true; sessionPickups += 1 end
         end
     end
     if picked then lastPickup = now end
@@ -817,7 +894,7 @@ local logoIcon = Instance.new("ImageLabel"); logoIcon.Name = "Icon"; logoIcon.An
 logoIcon.Size = UDim2.fromScale(0.72, 0.72); logoIcon.BackgroundTransparency = 1; logoIcon.Image = ICON_SPLASH; logoIcon.ImageColor3 = Color3.fromRGB(10, 10, 12); logoIcon.ScaleType = Enum.ScaleType.Fit; logoIcon.Parent = logo
 
 new("TextLabel", { Size = UDim2.new(0, 220, 0, 16), Position = UDim2.new(0, 52, 0, 5), BackgroundTransparency = 1, Text = "BSS-AIM ULTRA", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 14, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
-new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.4", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+new("TextLabel", { Size = UDim2.new(0, 220, 0, 12), Position = UDim2.new(0, 52, 0, 21), BackgroundTransparency = 1, Text = (IS_PC and "PC tryhard" or "Mobile") .. "  ·  v12.6", TextColor3 = C.accent, TextSize = 9, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
 
 local function iconBtn(txt, xOff)
     local b = new("TextButton", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, xOff, 0.5, -15), BackgroundColor3 = C.bg3, BorderSizePixel = 0, Text = txt, TextColor3 = C.accent, TextSize = 16, Font = Enum.Font.GothamBold, AutoButtonColor = false, Active = true, Parent = header, ZIndex = 2 })
@@ -968,15 +1045,27 @@ slider(espPage, "Rango ESP", "MaxESP", 50, 1500, false)
 
 local hitboxPage = pages["HITBOX"]
 section(hitboxPage, "EXPANDER")
-toggle(hitboxPage, "Activar Hitbox", "HitboxExpander", function(v) if v then for _,p in ipairs(Players:GetPlayers()) do if p.Character then applyHitbox(p.Character) end end end end)
-slider(hitboxPage, "Tamaño", "HitboxSize", 2, 30, false, function(v) if CFG.HitboxExpander then for _,p in ipairs(Players:GetPlayers()) do if p.Character then applyHitbox(p.Character) end end end end)
-slider(hitboxPage, "Transparencia", "HitboxTransparency", 0, 1, true)
+toggle(hitboxPage, "Activar Hitbox", "HitboxExpander", function(v) 
+    if v then reapplyAllHitboxes() else restoreAllHitboxes() end 
+end)
+slider(hitboxPage, "Tamaño", "HitboxSize", 2, 30, false, function(v) 
+    if CFG.HitboxExpander then 
+        for char, cache in pairs(_hitboxApplied) do cache.hrpSize = nil; cache.headSize = nil end
+        reapplyAllHitboxes() 
+    end 
+end)
+slider(hitboxPage, "Transparencia", "HitboxTransparency", 0, 1, true, function(v) 
+    if CFG.HitboxExpander then 
+        for char, cache in pairs(_hitboxApplied) do cache.hrpT = nil; cache.headT = nil end
+        reapplyAllHitboxes() 
+    end 
+end)
 
 local pickPage = pages["PICKUP"]
-section(pickPage, "AUTO PICKUP")
+section(pickPage, "AUTO PICKUP (INSTANTÁNEO)")
 toggle(pickPage, "Activar pickup", "AutoPickup")
 slider(pickPage, "Radio", "PickupRadius", 5, 100, false)
-slider(pickPage, "Delay", "PickupDelay", 0.02, 0.5, true)
+slider(pickPage, "Delay de respaldo", "PickupDelay", 0.02, 0.5, true)
 section(pickPage, "CATEGORIAS")
 toggle(pickPage, "Money", "PickupMoney")
 toggle(pickPage, "Armas", "PickupWeapons")
@@ -1008,6 +1097,7 @@ keybindRow(safePage, "Cerrar Panel", "CloseKey")
 actionBtn(safePage, "Reiniciar script", C.danger, function()
     pcall(function() if originalDisplayName then LocalPlayer.DisplayName = originalDisplayName end end)
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+    restoreAllHitboxes()
     espScreen:Destroy(); sg:Destroy()
     for plr in pairs(pESP) do clearESP(plr) end
     getgenv().BSS_Aim_Loaded = false
@@ -1026,7 +1116,7 @@ local function makeDrag(f, h)
 end
 makeDrag(panel, header)
 
--- MINI BUTTON: Fijo en el medio de arriba
+-- MINI BUTTON
 local miniBtn = new("TextButton", { Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0.5, -28, 0, 20), BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, Text = "", AutoButtonColor = false, Active = true, Visible = false, ZIndex = 200, Parent = sg })
 corner(miniBtn, 28); neonStroke(miniBtn, Color3.fromRGB(255, 255, 255))
 local miniIcon = Instance.new("ImageLabel"); miniIcon.AnchorPoint = Vector2.new(0.5, 0.5); miniIcon.Position = UDim2.fromScale(0.5, 0.5)
@@ -1067,6 +1157,7 @@ minBtn.MouseButton1Click:Connect(closePanel)
 closeBtn.MouseButton1Click:Connect(function()
     pcall(function() if originalDisplayName then LocalPlayer.DisplayName = originalDisplayName end end)
     pcall(function() RunService:UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
+    restoreAllHitboxes()
     espScreen:Destroy(); sg:Destroy()
     for plr in pairs(pESP) do clearESP(plr) end
     getgenv().BSS_Aim_Loaded = false
@@ -1092,7 +1183,7 @@ local wmStroke = Instance.new("UIStroke"); wmStroke.Color = C.accent; wmStroke.T
 local wmLabel = Instance.new("TextLabel")
 wmLabel.Size = UDim2.new(1, -16, 1, 0); wmLabel.Position = UDim2.new(0, 10, 0, 0); wmLabel.BackgroundTransparency = 1
 wmLabel.Font = Enum.Font.GothamBold; wmLabel.TextSize = 12; wmLabel.TextColor3 = C.accent; wmLabel.TextXAlignment = Enum.TextXAlignment.Left
-wmLabel.Text = "BSS-Aim Ultra v12.4"; wmLabel.Parent = watermark
+wmLabel.Text = "BSS-Aim Ultra v12.6"; wmLabel.Parent = watermark
 
 local statsHUD = Instance.new("Frame")
 statsHUD.Size = UDim2.fromOffset(180, 90); statsHUD.Position = UDim2.new(1, -200, 0, 60)
@@ -1112,7 +1203,7 @@ local fpsCount = 0; local fpsTimer = tick(); local currentFPS = 60
 task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         pcall(updateESP)
-        pcall(tryPickup)
+        pcall(tryPickupLoop)
         pcall(trackKills)
         task.wait(0.1)
     end
@@ -1129,12 +1220,12 @@ task.spawn(function()
     while getgenv().BSS_Aim_Loaded do
         if CFG.HitboxExpander then
             for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and plr.Character then
+                if plr ~= LocalPlayer and plr.Character and not _hitboxOriginal[plr.Character] then
                     applyHitbox(plr.Character)
                 end
             end
         end
-        task.wait(0.5)
+        task.wait(1)
     end
 end)
 
@@ -1170,23 +1261,25 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
         fovStroke.Color = currentTarget and C.aimLock or C.accent; fovCircle.Visible = true
     else fovCircle.Visible = false end
 
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    local inCar = hum and hum.SeatPart ~= nil
-
     if CFG.Enabled and aimOn and currentTarget and CFG.CameraLock then
-        if inCar then
-            if Camera.CameraType ~= Enum.CameraType.Scriptable then
-                Camera.CameraType = Enum.CameraType.Scriptable
-            end
-        else
-            if Camera.CameraType == Enum.CameraType.Scriptable then
-                Camera.CameraType = Enum.CameraType.Custom
-            end
+        -- CAR FIX: Forzamos Custom siempre, para que la cámara siga al vehiculo/jugador
+        if Camera.CameraType ~= Enum.CameraType.Custom then
+            Camera.CameraType = Enum.CameraType.Custom
         end
 
         local camPos = Camera.CFrame.Position
         local tPos = currentTarget.Position
-        Camera.CFrame = CFrame.lookAt(camPos, tPos)
+        
+        -- FIX DEL GIMBAL LOCK (Cámara loca en el carro)
+        local lookDir = (tPos - camPos).Unit
+        local upVec = Vector3.new(0, 1, 0)
+        
+        -- Si el enemigo está casi perfectamente arriba o abajo, cambiamos el eje para que no se voltee
+        if math.abs(lookDir.Y) > 0.99 then
+            upVec = Vector3.new(0, 0, 1)
+        end
+
+        Camera.CFrame = CFrame.lookAt(camPos, tPos, upVec)
         
     else
         if Camera.CameraType == Enum.CameraType.Scriptable then
@@ -1221,5 +1314,5 @@ RunService:BindToRenderStep("BSS_Aim_Ultra_Loop", Enum.RenderPriority.Camera.Val
     end
 end)
 
-notify("BSS-Aim ULTRA v12.4", "ESP Armas Fix + Car Lock", 6)
-print("[BSS-Aim ULTRA v12.4] cargado")
+notify("BSS-Aim ULTRA v12.6", "Car Camera Fix + UpVector activo", 6)
+print("[BSS-Aim ULTRA v12.6] cargado - Car Fix & Heavy Hitbox")

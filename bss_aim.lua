@@ -1,22 +1,35 @@
 -- ============================================================================
--- BSS LAUNCHER v2.1 — DUAL PANEL FIXED (strong integrado)
+-- BSS LAUNCHER v2.2 — DEBUG BUILD (strong integrado + diagnostico)
 -- Selector + DISIMULATED (BSS-Aim ULTRA v13.7) + STRONG (SuperHub BlockSpin)
 -- ============================================================================
--- ============================================================================
--- BSS LAUNCHER v2.0 — DUAL PANEL COMPLETO (PARTE 1/3)
--- Panel selector + DISIMULATED completo
--- ============================================================================
 
-if not game:IsLoaded() then game.Loaded:Wait() end
+-- Diagnostico: imprime cada paso para localizar donde peta
+local function LOG(msg) pcall(function() warn("[BSS]", msg) end); print("[BSS]", msg) end
+LOG("boot start")
+
+-- Executor compatibility shim: algunos executors no tienen gethui/getgenv
+if not getgenv then
+    getgenv = function() return _G end
+    LOG("shim: getgenv -> _G")
+end
+if not gethui then
+    gethui = nil  -- forzar fallback a PlayerGui
+    LOG("shim: gethui missing, fallback a PlayerGui")
+end
+
+if not game:IsLoaded() then LOG("waiting game.Loaded"); game.Loaded:Wait() end
+LOG("game loaded")
 
 pcall(function()
     local parent=(gethui and gethui()) or game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
     if parent then for _,v in ipairs(parent:GetChildren()) do if tostring(v.Name):match("^BSS_") or tostring(v.Name)=="zhXUI" or tostring(v.Name)=="BSS_LAUNCHER" then v:Destroy() end end end
     pcall(function() game:GetService("RunService"):UnbindFromRenderStep("BSS_Aim_Ultra_Loop") end)
 end)
+LOG("purge previo ok")
 
 local Players=game:GetService("Players"); local TweenService=game:GetService("TweenService"); local LocalPlayer=Players.LocalPlayer
 local function getParentGui() if gethui then local ok,r=pcall(gethui); if ok and r then return r end end return LocalPlayer:WaitForChild("PlayerGui") end
+LOG("services ok, construyendo selector...")
 
 -- SELECTOR UI
 local selGui=Instance.new("ScreenGui"); selGui.Name="BSS_LAUNCHER"; selGui.ResetOnSpawn=false; selGui.IgnoreGuiInset=true; selGui.DisplayOrder=999; selGui.Parent=getParentGui()
@@ -39,9 +52,11 @@ end
 
 local disimBtn=makePanelBtn("DISIMULATED","BSS-Aim ULTRA v13.7 STEALTH\naimbot · ESP · pickup · lerp cam",35,Color3.fromRGB(255,255,255))
 local strongBtn=makePanelBtn("STRONG","SuperHub BlockSpin COMPLETO\nkill all · god gun · anti kill · ESP · inf stamina",265,Color3.fromRGB(160,80,255))
+LOG("selector UI creado, botones listos")
 
 bg.Size=UDim2.fromOffset(1,1)
 TweenService:Create(bg,TweenInfo.new(0.28,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Size=UDim2.fromOffset(500,240)}):Play()
+LOG("tween open disparado — DEBES VER EL SELECTOR AHORA")
 
 local function closeSel()
     local tw=TweenService:Create(bg,TweenInfo.new(0.18,Enum.EasingStyle.Quart,Enum.EasingDirection.In),{Size=UDim2.fromOffset(1,1),BackgroundTransparency=1})
@@ -3195,7 +3210,16 @@ end)
 end -- end launchStrong
 
 -- ============================================================================
--- WIRE BUTTONS
+-- WIRE BUTTONS (con guard: cualquier error en launch* se reporta)
 -- ============================================================================
-disimBtn.MouseButton1Click:Connect(launchDisimulated)
-strongBtn.MouseButton1Click:Connect(launchStrong)
+disimBtn.MouseButton1Click:Connect(function()
+    LOG("click DISIMULATED")
+    local ok, err = pcall(launchDisimulated)
+    if not ok then LOG("ERROR launchDisimulated: "..tostring(err)) end
+end)
+strongBtn.MouseButton1Click:Connect(function()
+    LOG("click STRONG")
+    local ok, err = pcall(launchStrong)
+    if not ok then LOG("ERROR launchStrong: "..tostring(err)) end
+end)
+LOG("botones conectados — launcher ready")
